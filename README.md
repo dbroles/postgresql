@@ -1,3 +1,5 @@
+![main_screen.png](assets/main_screen.png)
+
 # User Manager for PostgreSQL
 
 PostgreSQL does not have "users" or "groups".
