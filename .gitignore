@@ -44,4 +44,18 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-.env
+.env*
+!.env.example
+
+# Keystores, certificates and signing keys
+*.jks
+*.keystore
+*.p12
+*.cer
+*.key
+*.mobileprovision
+key.properties
+
+*.orig
+*.rej
+*.crash
