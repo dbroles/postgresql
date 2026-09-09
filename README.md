@@ -1,17 +1,52 @@
-![main_screen.png](assets/main_screen.png)
-
 # User Manager for PostgreSQL
+![Main Screen](assets/main_screen.png)
 
-PostgreSQL does not have "users" or "groups".
-Instead, it uses the concept of **roles**, which possess attributes and privileges and can be granted to other roles.
+
+## TLDR;
+If you are a DBA or software developer this app is for you.  
+What do you do with this app? You give it to the helpdesk or security engineer.
+
+![alt text](assets/dbroles.png)
+
+Your job, among many other things, is granting privileges to groups.  
+The helpdesk or security engineer is responsible for putting users in these groups.
+
+Employees are hired and fired all the time.  
+They are promoted and demoted all the time.  
+They change departments all the time.
+
+When you work for a middle to large size organization this can take up a lot of your time quickly.  
+You don't care if Karen is hired to work in Human Resources.  
+That is something that the Helpdesk person can handle by using this app.
+
+### Granting
+When you grant a group to a user, for example: `grant hr to karen;`
+You have three options:
+- ADMIN; the user will be able to grant this privilege to other users. Or drop the `hr` role altogether.
+- INHERIT; the user can SELECT, UPDATE, INSERT and DELETE any object that the `hr` group can access.
+- SET; the user can use the attributes of the `hr` group. Such as BYPASSRLS by using `set role hr`
+
+Role attributes (SUPERUSER, INHERIT, BYPASSRLS etc.) are not inherited. They can only be obtained by switching to that role using `set role <role_name>`. This program uses the default values from PostgreSQL; ADMIN=false, INHERIT=true, SET=true.
+
+
+## Users, Groups and Roles
+
+```
+Although technically correct, the explanation below is an oversimplification of the reality of PostgreSQL roles.
+More information can be found here: https://www.postgresql.org/docs/current/user-manag.html
+```
+
+PostgreSQL does not have **users** or **groups**.  
+Instead, it uses the concept of **roles**, which have attributes and privileges and can be granted to other roles.
 
 PostgreSQL prevents circular inheritance of roles. If role A inherits role B, and role B inherits role A, then PostgreSQL will throw an error.
 
 The following things can be assigned to roles:
 
-## 1. Role Attributes, Constraints and Security Labels
-There are 8 role attributes:
-- SuperUser
+### 1. Role Attributes, Constraints and Security Labels
+
+Each role has eight attributes:
+- Superuser
 - Inherit
 - Create Role
 - Create DB
@@ -20,18 +55,23 @@ There are 8 role attributes:
 - Bypass RLS
 - Password
 
-The `Login` attribute determines if a role can log in to the database. This is the practical difference between a "user" and a "group":
-- If `Login` is true, it is a **user**.
-- If `Login` is false, it is a **group**.
+When a user is selected on the left side of the screen, his attributes are shown on the right side of the screen:  
+![Login Attributes](assets/attributes.png)  
+Of course green means set and grey means not set.  
 
-From here on, I will use the words `user` and `group` depending on whether the role has the Login attribute set to true or false.
+The `Login` attribute determines if a role can log in to the database.  This is the difference between a "user" and a "group":
+- If `Login` is true, it is a **user** and appears on the **left**
+- If `Login` is false, it is a **group** and appears on the **right**
 
-Attributes are **not** inherited by child roles. If a group called `Admins` has the SuperUser attribute set to true, members of that group are **not** superusers. They must be granted the SuperUser attribute themselves.
+From here on, I will use the words `user` and `group` depending on whether the role has the **Login** attribute set to true or false.
 
-Roles can also have constraints by setting a CONNECTION LIMIT or a VALID UNTIL.
-Roles can have security labels (MAC / SELinux) by applying a SECURITY LABEL or COMMENT to the role.
+Attributes are **not** inherited by child roles. If a group called `DBAs` has the Superuser attribute set to **true**, members of that group are **not** superusers.  
+They must be granted the Superuser attribute themselves.
 
-## 2. Object-Level Privileges
+Roles can have constraints by setting a CONNECTION LIMIT or a VALID UNTIL attribute.  
+Roles can have security labels (MAC/SELinux) by applying a SECURITY LABEL or COMMENT to the role.
+
+### 2. Object-Level Privileges
 There are many different privileges on many different objects.  
 The most important ones are:
 - SELECT
@@ -39,9 +79,9 @@ The most important ones are:
 - UPDATE
 - DELETE
 
-These privileges are inherited.  
-So if a group called `hr` can SELECT, INSERT and UPDATE on table `hr.employees` then
-any user that is a member of `hr` can also SELECT, INSERT and UPDATE on `hr.employees`.
+These privileges **are** inherited.  
+So if a group called `hr` can SELECT, INSERT and UPDATE on table `hr.persons` then
+any user that is a member of `hr` can also SELECT, INSERT and UPDATE on `hr.persons`.
 
 Many organizations use this feature to create a system where privileges are granted to groups and users become members of these groups.
 Thereby inheriting the privileges of the groups.
@@ -50,7 +90,7 @@ Access privileges can be **GRANT**ed and **REVOKE**d on roles for: tables (or [m
 
 
 
-## 03. RLS Policies
+### 03. RLS Policies
 ```sql
 CREATE POLICY policy_name ON table_name 
 TO role_name [, ...] 
@@ -60,23 +100,14 @@ Policies can also be assigned to roles.
 They can be permissive or restrictive.
 
 
-## 04. Runtime Configuration Settings (GUC Parameters)
+### 04. Runtime Configuration Settings (GUC Parameters)
 
 
-## 05. Predefined System Roles
+### 05. Predefined System Roles
 
 
-## 06. Object Ownership
-
-
-## Object Ownership
+### 06. Object Ownership
 Objects have owners. The owner of an object has all privileges on that object.
-
-## Responsibilities
-A DBA or software developer is responsible for granting privileges to groups.  
-The helpdesk or security engineer is responsible for putting users in groups.
-
-This software is used by the helpdesk or security engineer to place the users in the appropriate groups.
 
 ## Extra
 If you are going to make a login a member of a role, for example:
