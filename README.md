@@ -19,18 +19,7 @@ When you work for a middle to large size organization this can take up a lot of 
 You don't care if Karen is hired to work in Human Resources.  
 That is something that the Helpdesk person can handle by using this app.
 
-### Granting
-When you grant a group to a user, for example: `grant hr to karen;`
-You have three options:
-- ADMIN; the user will be able to grant this privilege to other users. Or drop the `hr` role altogether.
-- INHERIT; the user can SELECT, UPDATE, INSERT and DELETE any object that the `hr` group can access.
-- SET; the user can use the attributes of the `hr` group. Such as BYPASSRLS by using `set role hr`
-
-Role attributes (SUPERUSER, INHERIT, BYPASSRLS etc.) are not inherited. They can only be obtained by switching to that role using `set role <role_name>`. This program uses the default values from PostgreSQL; ADMIN=false, INHERIT=true, SET=true.
-
-
 ## Users, Groups and Roles
-
 ```
 Although technically correct, the explanation below is an oversimplification of the reality of PostgreSQL roles.
 More information can be found here: https://www.postgresql.org/docs/current/user-manag.html
@@ -65,8 +54,7 @@ The `Login` attribute determines if a role can log in to the database.  This is 
 
 From here on, I will use the words `user` and `group` depending on whether the role has the **Login** attribute set to true or false.
 
-Attributes are **not** inherited by child roles. If a group called `DBAs` has the Superuser attribute set to **true**, members of that group are **not** superusers.  
-They must be granted the Superuser attribute themselves.
+Attributes are **not** inherited by child roles. If a group called `DBAs` has the Superuser attribute set to **true**, members of that group are **not** superusers. If the `SET` option is true they can become Superuser however, see the section on [Granting](Granting).
 
 Roles can have constraints by setting a CONNECTION LIMIT or a VALID UNTIL attribute.  
 Roles can have security labels (MAC/SELinux) by applying a SECURITY LABEL or COMMENT to the role.
@@ -88,8 +76,7 @@ Thereby inheriting the privileges of the groups.
 
 Access privileges can be **GRANT**ed and **REVOKE**d on roles for: tables (or [materialized] views), columns, sequences, databases, domains, foreign data wrappers, servers, routines, languages, large objects, configuration parameters, schemas, tablespaces, types and other roles. [*grant*](https://www.postgresql.org/docs/current/sql-grant.html) / [*revoke*](https://www.postgresql.org/docs/current/sql-revoke.html)
 
-
-
+<!--
 ### 03. RLS Policies
 ```sql
 CREATE POLICY policy_name ON table_name 
@@ -108,37 +95,19 @@ They can be permissive or restrictive.
 
 ### 06. Object Ownership
 Objects have owners. The owner of an object has all privileges on that object.
+-->
+## Granting
+When you grant a group to a user, for example: `grant hr to karen;`
+You have three options:
+- ADMIN; the user will be able to grant this privilege to other users. Or drop the `hr` role altogether.
+- INHERIT; the user can SELECT, UPDATE, INSERT and DELETE any object that the `hr` group can access.
+- SET; the user can use the attributes of the `hr` group. Such as BYPASSRLS by using `set role hr`
+
+Role attributes (SUPERUSER, INHERIT, BYPASSRLS etc.) are not inherited. They can only be obtained by switching to that role using `set role <role_name>`. This program uses the default values from PostgreSQL; ADMIN=false, INHERIT=true, SET=true.
 
 ## Extra
-If you are going to make a login a member of a role, for example:
-grant hr to karen;
-Then you must have ADMIN rights on hr. Not on karen.
-
-The query to select the groups of a user is:
-```sql
-SELECT 
-    g.oid::int,
-    g.rolname AS name,
-    pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
-    COALESCE(
-        array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text) 
-        FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
-        '{}'::text[]
-    ) AS grantors,
-    (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-    COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted
-FROM pg_catalog.pg_roles g
-LEFT JOIN pg_catalog.pg_auth_members m
-    ON g.oid = m.roleid
-   AND m.member = $1::oid
-LEFT JOIN pg_catalog.pg_auth_members me
-    ON g.oid = me.roleid
-   AND me.member = CURRENT_USER::regrole::oid
-   AND me.admin_option = true
-WHERE NOT g.rolcanlogin
-GROUP BY g.oid, g.rolname
-ORDER BY g.rolname;
-```
+If you are going to make a login a member of a role, for example: `grant hr to karen;`
+Then you must have ADMIN rights on hr. Not per se on karen.
 
 The query to select the users is:
 ```sql
@@ -195,12 +164,38 @@ FROM user_roles
 ORDER BY name ASC;
 ```
 
+The query to select the groups of a user is:
+```sql
+SELECT 
+    g.oid::int,
+    g.rolname AS name,
+    pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
+    COALESCE(
+        array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text) 
+        FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
+        '{}'::text[]
+    ) AS grantors,
+    (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
+    COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted
+FROM pg_catalog.pg_roles g
+LEFT JOIN pg_catalog.pg_auth_members m
+    ON g.oid = m.roleid
+   AND m.member = $1::oid
+LEFT JOIN pg_catalog.pg_auth_members me
+    ON g.oid = me.roleid
+   AND me.member = CURRENT_USER::regrole::oid
+   AND me.admin_option = true
+WHERE NOT g.rolcanlogin
+GROUP BY g.oid, g.rolname
+ORDER BY g.rolname;
+```
+
 ---
 
 ## Requirements
 
 - **PostgreSQL**: Version 14 or newer (tested on PostgreSQL 14, 15, 16, and 17).
-- **Permissions**: A PostgreSQL role with `CREATEROLE` or `SUPERUSER` privileges to manage roles and grant memberships.
+- **Permissions**: A PostgreSQL role with `CREATEROLE` (**not** `SUPERUSER`) privileges to manage roles and grant memberships.
 
 ## Supported Platforms
 
@@ -240,3 +235,5 @@ ORDER BY name ASC;
 
 This project is licensed under the PostgreSQL / BSD-style License. See [LICENSE](LICENSE) for details.
 
+## Acknowledgements
+- [postgres](https://pub.dev/packages/postgres) – Maintained by István Soós ([@isoos](https://github.com/isoos)) and community contributors.
