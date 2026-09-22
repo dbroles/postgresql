@@ -78,7 +78,12 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     }
     if (_roleSearchQuery.isNotEmpty) {
       final query = _roleSearchQuery.toLowerCase();
-      filtered = filtered.where((r) => r.name.toLowerCase().contains(query));
+      filtered = filtered.where((r) {
+        final matchesName = r.name.toLowerCase().contains(query);
+        final matchesDescription = widget.showDescriptions &&
+            (r.description?.toLowerCase().contains(query) ?? false);
+        return matchesName || matchesDescription;
+      });
     }
     return filtered;
   }
@@ -119,7 +124,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
         children: [
           CircleAvatar(
             radius: 14,
-            backgroundColor: value ? Colors.green : Colors.grey.shade400,
+            backgroundColor: value ? Theme.of(context).colorScheme.primary : Colors.grey.shade400,
             child: Text(
               abbreviation,
               style: const TextStyle(

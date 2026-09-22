@@ -433,4 +433,179 @@ void main() {
       expect(tester.widget<TextField>(find.widgetWithText(TextField, 'Filter roles...')).focusNode?.hasFocus, isTrue);
     });
   });
+
+  group('UX Optimizations: Filter by Description', () {
+    testWidgets('RoleManagementWidget filters roles by description when showDescriptions is true', (WidgetTester tester) async {
+      final roleSearchController = TextEditingController();
+      final groups = [
+        PgUserGroup(
+          oid: 301,
+          name: 'grp_finance',
+          description: 'Accounting and Financial Reports',
+          granted: false,
+          grantable: true,
+          grantors: [],
+        ),
+        PgUserGroup(
+          oid: 302,
+          name: 'grp_eng',
+          description: 'Software Engineering Team',
+          granted: false,
+          grantable: true,
+          grantors: [],
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoleManagementWidget(
+              user: sampleUser,
+              groups: groups,
+              onToggleRole: (_, _) async {},
+              isLoading: false,
+              roleSearchController: roleSearchController,
+              showSystemRoles: false,
+              showDescriptions: true,
+              showFilters: true,
+              currentUsername: 'alice',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Both initially visible
+      expect(find.textContaining('grp_finance'), findsOneWidget);
+      expect(find.textContaining('grp_eng'), findsOneWidget);
+
+      // Search by description keyword 'accounting'
+      roleSearchController.text = 'accounting';
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('grp_finance'), findsOneWidget);
+      expect(find.textContaining('grp_eng'), findsNothing);
+    });
+
+    testWidgets('RoleManagementWidget does NOT filter by description when showDescriptions is false', (WidgetTester tester) async {
+      final roleSearchController = TextEditingController();
+      final groups = [
+        PgUserGroup(
+          oid: 301,
+          name: 'grp_finance',
+          description: 'Accounting and Financial Reports',
+          granted: false,
+          grantable: true,
+          grantors: [],
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: RoleManagementWidget(
+              user: sampleUser,
+              groups: groups,
+              onToggleRole: (_, _) async {},
+              isLoading: false,
+              roleSearchController: roleSearchController,
+              showSystemRoles: false,
+              showDescriptions: false,
+              showFilters: true,
+              currentUsername: 'alice',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('grp_finance'), findsOneWidget);
+
+      // Search by description keyword 'accounting' when descriptions are disabled
+      roleSearchController.text = 'accounting';
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('grp_finance'), findsNothing);
+    });
+
+    testWidgets('RoleManagerHome filters users by description when showDescriptions is true', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'showDescriptions': true,
+        'showFilters': true,
+      });
+
+      final fakeDb = FakeDatabaseService(
+        roles: [
+          PgRole(
+            oid: 101,
+            name: 'usr_sec',
+            description: 'Security Auditor',
+            canLogin: true,
+            isAdmin: true,
+            canDrop: true,
+          ),
+          PgRole(
+            oid: 102,
+            name: 'usr_ops',
+            description: 'Cloud Operations',
+            canLogin: true,
+            isAdmin: true,
+            canDrop: true,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('usr_sec'), findsOneWidget);
+      expect(find.text('usr_ops'), findsOneWidget);
+
+      // Filter by description
+      await tester.enterText(find.widgetWithText(TextField, 'Filter users...'), 'security');
+      await tester.pumpAndSettle();
+
+      expect(find.text('usr_sec'), findsOneWidget);
+      expect(find.text('usr_ops'), findsNothing);
+    });
+
+    testWidgets('RoleManagerHome does NOT filter users by description when showDescriptions is false', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'showDescriptions': false,
+        'showFilters': true,
+      });
+
+      final fakeDb = FakeDatabaseService(
+        roles: [
+          PgRole(
+            oid: 101,
+            name: 'usr_sec',
+            description: 'Security Auditor',
+            canLogin: true,
+            isAdmin: true,
+            canDrop: true,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('usr_sec'), findsOneWidget);
+
+      // Filter by description when showDescriptions is false
+      await tester.enterText(find.widgetWithText(TextField, 'Filter users...'), 'security');
+      await tester.pumpAndSettle();
+
+      expect(find.text('usr_sec'), findsNothing);
+    });
+  });
 }

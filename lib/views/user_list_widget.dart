@@ -9,7 +9,8 @@ class UserListWidget extends StatelessWidget {
   final FocusNode? searchFocusNode;
   final String searchQuery;
   final bool showFilters;
-  final VoidCallback onAddPressed;
+  final bool showDescriptions;
+  final VoidCallback? onAddPressed;
   final Future<void> Function()? onRefresh;
 
   const UserListWidget({
@@ -21,7 +22,8 @@ class UserListWidget extends StatelessWidget {
     this.searchFocusNode,
     required this.searchQuery,
     required this.showFilters,
-    required this.onAddPressed,
+    this.showDescriptions = false,
+    this.onAddPressed,
     this.onRefresh,
   });
 
@@ -31,6 +33,7 @@ class UserListWidget extends StatelessWidget {
       itemCount: users.length,
       itemBuilder: (context, index) {
         final user = users[index];
+        final theme = Theme.of(context);
         return ListTile(
           selected: selectedUserOid == user.oid,
           leading: Icon(
@@ -40,6 +43,19 @@ class UserListWidget extends StatelessWidget {
                 : (user.isCurrent ? Colors.cyan.shade600 : null),
           ),
           title: Text(user.name),
+          subtitle: (showDescriptions &&
+                  user.description != null &&
+                  user.description!.isNotEmpty)
+              ? Text(
+                  user.description!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontStyle: FontStyle.italic,
+                  ),
+                )
+              : null,
           onTap: () => onUserSelected(user),
         );
       },
@@ -84,11 +100,13 @@ class UserListWidget extends StatelessWidget {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: onAddPressed,
-        mini: true, // Optional: make it mini to fit better in the pane
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: onAddPressed != null
+          ? FloatingActionButton(
+              onPressed: onAddPressed,
+              mini: true, // Optional: make it mini to fit better in the pane
+              child: const Icon(Icons.add),
+            )
+          : null,
     );
   }
 }

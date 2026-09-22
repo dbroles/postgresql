@@ -16,6 +16,7 @@ class DatabaseService {
   final Map<int, List<PgUserGroup>> _cachedUserGroups = {};
   String? _cachedClusterName;
   bool? _cachedIsSuperuser;
+  bool? _cachedCanCreateRole;
   int? _cachedCurrentUserOid;
 
   DatabaseService({
@@ -75,6 +76,7 @@ class DatabaseService {
     _cachedUserGroups.clear();
     _cachedClusterName = null;
     _cachedIsSuperuser = null;
+    _cachedCanCreateRole = null;
     _cachedCurrentUserOid = null;
   }
 
@@ -144,17 +146,23 @@ class DatabaseService {
     if (!forceRefresh && _cachedCurrentUserOid != null) return;
     final pool = _getPool();
     final result = await pool.execute(
-      "SELECT oid::int, rolsuper, rolcreaterole FROM pg_roles WHERE rolname = current_user",
+      "SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role FROM pg_roles WHERE rolname = current_user",
     );
     if (result.isNotEmpty) {
       _cachedCurrentUserOid = result.first[0] as int;
       _cachedIsSuperuser = result.first[1] as bool;
+      _cachedCanCreateRole = result.first[2] as bool;
     }
   }
 
   Future<bool> isCurrentUserSuperuser({bool forceRefresh = false}) async {
     await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
     return _cachedIsSuperuser ?? false;
+  }
+
+  Future<bool> canCurrentUserCreateRole({bool forceRefresh = false}) async {
+    await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
+    return _cachedCanCreateRole ?? false;
   }
 
   Future<void> setupRoleAdmin(String adminName, String adminPass) async {
@@ -205,6 +213,12 @@ class DatabaseService {
     }
     if (forceRefresh || _cachedRoles == null) {
       _cachedRoles = await _queryRoles(forceRefresh: forceRefresh);
+      final current = _cachedRoles!.where((r) => r.isCurrent).firstOrNull;
+      if (current != null) {
+        _cachedCurrentUserOid = current.oid;
+        _cachedIsSuperuser = current.isSuperuser;
+        _cachedCanCreateRole = current.isSuperuser || current.createRole;
+      }
     }
     return _cachedRoles!;
   }

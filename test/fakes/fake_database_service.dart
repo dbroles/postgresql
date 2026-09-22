@@ -7,6 +7,7 @@ import 'package:user_manager/services/database_service.dart';
 class FakeDatabaseService extends DatabaseService {
   String? testConnectionResult;
   bool isSuperuserResult;
+  bool canCreateRoleResult;
   List<PgRole> mockRoles;
   List<PgMembership> mockMemberships;
   Map<int, List<PgUserGroup>>? mockUserGroups;
@@ -18,6 +19,7 @@ class FakeDatabaseService extends DatabaseService {
 
   int testConnectionCalls = 0;
   int isCurrentUserSuperuserCalls = 0;
+  int canCurrentUserCreateRoleCalls = 0;
   int fetchAllRolesCalls = 0;
   int fetchClusterNameCalls = 0;
   int fetchSslStatusCalls = 0;
@@ -37,6 +39,7 @@ class FakeDatabaseService extends DatabaseService {
     super.sslMode = SslMode.disable,
     this.testConnectionResult,
     this.isSuperuserResult = false,
+    this.canCreateRoleResult = true,
     List<PgRole>? roles,
     List<PgMembership>? memberships,
     this.mockClusterName = 'test_cluster',
@@ -90,6 +93,16 @@ class FakeDatabaseService extends DatabaseService {
   Future<bool> isCurrentUserSuperuser({bool forceRefresh = false}) async {
     isCurrentUserSuperuserCalls++;
     return isSuperuserResult;
+  }
+
+  @override
+  Future<bool> canCurrentUserCreateRole({bool forceRefresh = false}) async {
+    canCurrentUserCreateRoleCalls++;
+    final currentRole = mockRoles.where((r) => r.isCurrent).firstOrNull;
+    if (currentRole != null) {
+      return currentRole.isSuperuser || currentRole.createRole;
+    }
+    return canCreateRoleResult;
   }
 
   @override

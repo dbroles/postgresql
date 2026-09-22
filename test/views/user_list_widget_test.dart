@@ -40,4 +40,85 @@ void main() {
     // Current user that is also a superuser is gold (amber)
     expect(icons[3].color, Colors.amber);
   });
+
+  testWidgets('UserListWidget renders FloatingActionButton when onAddPressed is provided', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserListWidget(
+            users: const [],
+            onUserSelected: (_) {},
+            searchController: TextEditingController(),
+            searchQuery: '',
+            showFilters: false,
+            onAddPressed: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+  });
+
+  testWidgets('UserListWidget omits FloatingActionButton when onAddPressed is null', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserListWidget(
+            users: const [],
+            onUserSelected: (_) {},
+            searchController: TextEditingController(),
+            searchQuery: '',
+            showFilters: false,
+            onAddPressed: null,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(FloatingActionButton), findsNothing);
+  });
+
+  testWidgets('UserListWidget renders description subtitle when showDescriptions is true', (tester) async {
+    final userWithDesc = PgRole(oid: 1, name: 'alice', description: 'Finance Analyst');
+    final userWithoutDesc = PgRole(oid: 2, name: 'bob');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserListWidget(
+            users: [userWithDesc, userWithoutDesc],
+            onUserSelected: (_) {},
+            searchController: TextEditingController(),
+            searchQuery: '',
+            showFilters: false,
+            showDescriptions: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Finance Analyst'), findsOneWidget);
+  });
+
+  testWidgets('UserListWidget hides description subtitle when showDescriptions is false', (tester) async {
+    final userWithDesc = PgRole(oid: 1, name: 'alice', description: 'Finance Analyst');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserListWidget(
+            users: [userWithDesc],
+            onUserSelected: (_) {},
+            searchController: TextEditingController(),
+            searchQuery: '',
+            showFilters: false,
+            showDescriptions: false,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Finance Analyst'), findsNothing);
+  });
 }

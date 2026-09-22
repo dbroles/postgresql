@@ -137,6 +137,7 @@ void main() {
       // Database queries were executed
       expect(fakeDb.testConnectionCalls, 1);
       expect(fakeDb.isCurrentUserSuperuserCalls, 1);
+      expect(fakeDb.canCurrentUserCreateRoleCalls, 1);
       expect(fakeDb.fetchAllRolesCalls, 1);
       expect(fakeDb.fetchClusterNameCalls, 1);
       expect(fakeDb.fetchSslStatusCalls, 1);
@@ -1108,6 +1109,221 @@ void main() {
 
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
+    });
+  });
+
+  group('Create Role FAB Visibility', () {
+    testWidgets('FAB is visible when user has createrole rights', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: [
+          PgRole(oid: 10, name: 'alice', canLogin: true),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+    });
+
+    testWidgets('FAB is hidden when user lacks createrole rights', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: false,
+        roles: [
+          PgRole(oid: 10, name: 'alice', canLogin: true),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FloatingActionButton), findsNothing);
+    });
+
+    testWidgets('FAB disappears after refresh when createrole is revoked', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService(
+        roles: [
+          PgRole(oid: 10, name: 'admin_user', canLogin: true, isCurrent: true, createRole: true),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.macOS),
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+
+      // Superuser runs ALTER ROLE ... NOCREATEROLE
+      fakeDb.mockRoles = [
+        PgRole(oid: 10, name: 'admin_user', canLogin: true, isCurrent: true, createRole: false),
+      ];
+
+      final refreshButton = find.byTooltip('Refresh');
+      expect(refreshButton, findsOneWidget);
+      await tester.tap(refreshButton);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FloatingActionButton), findsNothing);
+    });
+  });
+
+  group('Deselect user when visibility setting is toggled off', () {
+    final testRoles = [
+      PgRole(
+        oid: 201,
+        name: 'super_admin',
+        canLogin: true,
+        isSuperuser: true,
+        canManage: false,
+        canDrop: false,
+      ),
+      PgRole(
+        oid: 202,
+        name: 'connected_agent',
+        canLogin: true,
+        isSuperuser: false,
+        canManage: false,
+        canDrop: false,
+      ),
+    ];
+
+    testWidgets('deselects superuser when Show Superusers is toggled off', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'db_host': 'localhost',
+        'db_port': 5432,
+        'db_user': 'connected_agent',
+        'db_pass': '',
+        'showSystemRoles': false,
+        'showSuperusers': true,
+        'showDescriptions': true,
+        'showFilters': false,
+        'showConnectedUser': true,
+        'showUngrantableRoles': false,
+        'showUsersWithoutAdminOption': true,
+      });
+
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        username: 'connected_agent',
+        roles: testRoles,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap on super_admin to select
+      await tester.tap(find.text('super_admin'));
+      await tester.pumpAndSettle();
+
+      // Right pane should show management UI for super_admin
+      expect(find.text('User Manager - super_admin'), findsOneWidget);
+      expect(find.text('Select a user to manage roles'), findsNothing);
+
+      // Open settings
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+
+      // Toggle 'Show Superusers' off
+      final superusersSwitch = find.widgetWithText(SwitchListTile, 'Show Superusers');
+      await tester.ensureVisible(superusersSwitch);
+      await tester.tap(superusersSwitch);
+      await tester.pumpAndSettle();
+
+      // Close settings modal
+      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      // super_admin should no longer be visible in the list, and selection should be cleared
+      expect(find.text('super_admin'), findsNothing);
+      expect(find.text('Select a user to manage roles'), findsOneWidget);
+      expect(find.text('User Manager'), findsOneWidget);
+    });
+
+    testWidgets('deselects connected user when Show Connected User is toggled off', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'db_host': 'localhost',
+        'db_port': 5432,
+        'db_user': 'connected_agent',
+        'db_pass': '',
+        'showSystemRoles': false,
+        'showSuperusers': true,
+        'showDescriptions': true,
+        'showFilters': false,
+        'showConnectedUser': true,
+        'showUngrantableRoles': false,
+        'showUsersWithoutAdminOption': true,
+      });
+
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        username: 'connected_agent',
+        roles: testRoles,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap on connected_agent to select
+      await tester.tap(find.text('connected_agent'));
+      await tester.pumpAndSettle();
+
+      // Right pane should show management UI for connected_agent
+      expect(find.text('User Manager - connected_agent'), findsOneWidget);
+      expect(find.text('Select a user to manage roles'), findsNothing);
+
+      // Open settings
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+
+      // Toggle 'Show Connected User' off
+      final connectedUserSwitch = find.widgetWithText(SwitchListTile, 'Show Connected User');
+      await tester.ensureVisible(connectedUserSwitch);
+      await tester.tap(connectedUserSwitch);
+      await tester.pumpAndSettle();
+
+      // Close settings modal
+      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      // connected_agent should no longer be visible in the list, and selection should be cleared
+      expect(find.text('connected_agent'), findsNothing);
+      expect(find.text('Select a user to manage roles'), findsOneWidget);
+      expect(find.text('User Manager'), findsOneWidget);
     });
   });
 }

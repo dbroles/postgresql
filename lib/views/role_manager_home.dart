@@ -49,6 +49,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   String _userSearchQuery = '';
   String? _clusterName;
   bool _isSslEnabled = false;
+  bool _canCreateRole = false;
 
   @override
   void initState() {
@@ -200,11 +201,21 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await _loadInitialData();
   }
 
+  void _validateSelectedUser() {
+    if (_selectedUser == null) return;
+    final visibleUsers = _filterRoles(_users, isUserList: true);
+    if (!visibleUsers.any((u) => u.oid == _selectedUser!.oid)) {
+      _selectedUser = null;
+      _selectedUserGroups = [];
+    }
+  }
+
   Future<void> _saveSystemRolesSetting(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('showSystemRoles', value);
     setState(() {
       _showSystemRoles = value;
+      _validateSelectedUser();
     });
   }
 
@@ -221,6 +232,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await prefs.setBool('showUsersWithoutAdminOption', value);
     setState(() {
       _showUsersWithoutAdminOption = value;
+      _validateSelectedUser();
     });
   }
 
@@ -229,6 +241,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await prefs.setBool('showSuperusers', value);
     setState(() {
       _showSuperusers = value;
+      _validateSelectedUser();
     });
   }
 
@@ -253,6 +266,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await prefs.setBool('showConnectedUser', value);
     setState(() {
       _showConnectedUser = value;
+      _validateSelectedUser();
     });
   }
 
@@ -287,12 +301,14 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       final allRoles = await _dbService.fetchAllRoles(forceRefresh: true);
       final clusterName = await _dbService.fetchClusterName();
       final isSsl = await _dbService.fetchSslStatus();
+      final canCreateRole = await _dbService.canCurrentUserCreateRole();
       
       setState(() {
         _users = allRoles.where((r) => r.canLogin).toList();
         _groups = allRoles.where((r) => !r.canLogin).toList();
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
+        _canCreateRole = canCreateRole;
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -402,6 +418,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       }
       final clusterName = await _dbService.fetchClusterName();
       final isSsl = await _dbService.fetchSslStatus();
+      final canCreateRole = await _dbService.canCurrentUserCreateRole();
       if (!mounted) return;
 
       setState(() {
@@ -409,12 +426,14 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _groups = allRoles.where((r) => !r.canLogin).toList();
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
+        _canCreateRole = canCreateRole;
 
         if (_selectedUser != null) {
           final updatedUser = allRoles.where((r) => r.oid == _selectedUser!.oid).firstOrNull;
           if (updatedUser != null) {
             _selectedUser = updatedUser;
             _selectedUserGroups = refreshedGroups ?? [];
+            _validateSelectedUser();
           } else {
             _selectedUser = null;
             _selectedUserGroups = [];
@@ -489,7 +508,12 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
       final query = searchQuery.toLowerCase();
-      filtered = filtered.where((r) => r.name.toLowerCase().contains(query));
+      filtered = filtered.where((r) {
+        final matchesName = r.name.toLowerCase().contains(query);
+        final matchesDescription = _showDescriptions &&
+            (r.description?.toLowerCase().contains(query) ?? false);
+        return matchesName || matchesDescription;
+      });
     }
     return filtered.toList();
   }
@@ -583,11 +607,20 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     Text('General Settings', style: Theme.of(context).textTheme.titleLarge),
                     const Divider(),
                     SwitchListTile(
-                      title: const Text('Show System Roles'),
-                      subtitle: const Text('Include roles starting with "pg_"'),
-                      value: _showSystemRoles,
+                      title: const Text('Show Descriptions'),
+                      subtitle: const Text('Show role and user descriptions'),
+                      value: _showDescriptions,
                       onChanged: (value) {
-                        _saveSystemRolesSetting(value);
+                        _saveDescriptionsSetting(value);
+                        setModalState(() {});
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Show Filters'),
+                      subtitle: const Text('Show user and role search filters'),
+                      value: _showFilters,
+                      onChanged: (value) {
+                        _saveFiltersSetting(value);
                         setModalState(() {});
                       },
                     ),
@@ -619,29 +652,20 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                       },
                     ),
                     SwitchListTile(
-                      title: const Text('Show Descriptions'),
-                      subtitle: const Text('Show role and user descriptions'),
-                      value: _showDescriptions,
-                      onChanged: (value) {
-                        _saveDescriptionsSetting(value);
-                        setModalState(() {});
-                      },
-                    ),
-                    SwitchListTile(
-                      title: const Text('Show Filters'),
-                      subtitle: const Text('Show user and role search filters'),
-                      value: _showFilters,
-                      onChanged: (value) {
-                        _saveFiltersSetting(value);
-                        setModalState(() {});
-                      },
-                    ),
-                    SwitchListTile(
                       title: const Text('Show Connected User'),
                       subtitle: const Text('Show the active connection account in the user list'),
                       value: _showConnectedUser,
                       onChanged: (value) {
                         _saveShowConnectedUserSetting(value);
+                        setModalState(() {});
+                      },
+                    ),
+                    SwitchListTile(
+                      title: const Text('Show System Roles'),
+                      subtitle: const Text('Include roles starting with "pg_"'),
+                      value: _showSystemRoles,
+                      onChanged: (value) {
+                        _saveSystemRolesSetting(value);
                         setModalState(() {});
                       },
                     ),
@@ -672,7 +696,8 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       searchFocusNode: _userSearchFocusNode,
       searchQuery: _userSearchQuery,
       showFilters: _showFilters,
-      onAddPressed: _createNewRole,
+      showDescriptions: _showDescriptions,
+      onAddPressed: _canCreateRole ? _createNewRole : null,
       onRefresh: _refreshRolesData,
     );
 
