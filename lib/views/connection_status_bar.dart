@@ -58,7 +58,7 @@ class ConnectionStatusBar extends StatelessWidget {
               child: Icon(
                 isSslEnabled ? Icons.lock : Icons.lock_open,
                 size: 14,
-                color: isSslEnabled ? Colors.green : Colors.amber.shade700,
+                color: isSslEnabled ? theme.colorScheme.primary : Colors.amber.shade700,
               ),
             ),
           ],

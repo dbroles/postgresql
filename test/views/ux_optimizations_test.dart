@@ -224,6 +224,42 @@ void main() {
       expect(safeAreaWidget.top, isFalse);
       expect(safeAreaWidget.bottom, isTrue);
     });
+
+    testWidgets('ConnectionStatusBar SSL icon uses theme primary color when enabled and amber when disabled', (WidgetTester tester) async {
+      final theme = ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF88AA00)),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            bottomNavigationBar: ConnectionStatusBar(
+              host: 'db.example.com',
+              isSslEnabled: true,
+            ),
+          ),
+        ),
+      );
+
+      final lockIcon = tester.widget<Icon>(find.byIcon(Icons.lock));
+      expect(lockIcon.color, theme.colorScheme.primary);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: const Scaffold(
+            bottomNavigationBar: ConnectionStatusBar(
+              host: 'db.example.com',
+              isSslEnabled: false,
+            ),
+          ),
+        ),
+      );
+
+      final lockOpenIcon = tester.widget<Icon>(find.byIcon(Icons.lock_open));
+      expect(lockOpenIcon.color, Colors.amber.shade700);
+    });
   });
 
   group('UX Optimizations: Keyboard Shortcuts', () {
