@@ -71,6 +71,26 @@ class DatabaseService {
     }
   }
 
+  /// Safely quotes and escapes a PostgreSQL identifier (role name, table name, etc.).
+  /// Encloses in double quotes and doubles any embedded double quotes.
+  /// Throws [ArgumentError] if the identifier contains null characters.
+  static String escapeIdentifier(String identifier) {
+    if (identifier.contains('\u0000')) {
+      throw ArgumentError('PostgreSQL identifier cannot contain null characters.');
+    }
+    return '"${identifier.replaceAll('"', '""')}"';
+  }
+
+  /// Safely quotes and escapes a PostgreSQL string literal (password, comment, etc.).
+  /// Encloses in single quotes and doubles any embedded single quotes.
+  /// Throws [ArgumentError] if the literal contains null characters.
+  static String escapeLiteral(String literal) {
+    if (literal.contains('\u0000')) {
+      throw ArgumentError('PostgreSQL string literal cannot contain null characters.');
+    }
+    return "'${literal.replaceAll("'", "''")}'";
+  }
+
   void resetCache() {
     _cachedRoles = null;
     _cachedUserGroups.clear();
@@ -175,15 +195,18 @@ class DatabaseService {
       );
       final exists = (checkResult.first[0] as int) > 0;
 
+      final safeAdmin = escapeIdentifier(adminName);
+      final safePass = escapeLiteral(adminPass);
+
       // 2. Create or Alter role
       if (!exists) {
-        await conn.execute('CREATE ROLE "$adminName" WITH LOGIN CREATEROLE PASSWORD \'$adminPass\'');
+        await conn.execute('CREATE ROLE $safeAdmin WITH LOGIN CREATEROLE PASSWORD $safePass');
       } else {
-        await conn.execute('ALTER ROLE "$adminName" WITH LOGIN CREATEROLE PASSWORD \'$adminPass\'');
+        await conn.execute('ALTER ROLE $safeAdmin WITH LOGIN CREATEROLE PASSWORD $safePass');
       }
 
       // 3. Set standard description
-      await conn.execute("COMMENT ON ROLE \"$adminName\" IS 'grant and revoke roles to users'");
+      await conn.execute('COMMENT ON ROLE $safeAdmin IS ${escapeLiteral('grant and revoke roles to users')}');
 
       // 4. Grant ADMIN OPTION on all non-login roles (groups)
       // We skip system roles (pg_*) because some (like pg_database_owner) do not allow members.
@@ -192,7 +215,7 @@ class DatabaseService {
       );
       for (final row in groupsResult) {
         final groupName = row[0] as String;
-        await conn.execute('GRANT "$groupName" TO "$adminName" WITH ADMIN OPTION');
+        await conn.execute('GRANT ${escapeIdentifier(groupName)} TO $safeAdmin WITH ADMIN OPTION');
       }
     });
 
@@ -354,7 +377,7 @@ class DatabaseService {
   Future<void> grantRole(String userName, String roleName, {int? userOid}) async {
     final pool = _getPool();
     // DDL statements like GRANT cannot use parameters for identifiers ($1)
-    await pool.execute('GRANT "$roleName" TO "$userName"');
+    await pool.execute('GRANT ${escapeIdentifier(roleName)} TO ${escapeIdentifier(userName)}');
     
     // Update Role cache: permissions might have changed
     final updatedRole = await fetchRoleByName(roleName, fromCache: false);
@@ -375,7 +398,7 @@ class DatabaseService {
 
   Future<void> revokeRole(String userName, String roleName, {int? userOid}) async {
     final pool = _getPool();
-    await pool.execute('REVOKE "$roleName" FROM "$userName"');
+    await pool.execute('REVOKE ${escapeIdentifier(roleName)} FROM ${escapeIdentifier(userName)}');
     
     // Update Role cache
     final updatedRole = await fetchRoleByName(roleName, fromCache: false);
@@ -398,7 +421,7 @@ class DatabaseService {
     final pool = _getPool();
     final roleToDrop = _cachedRoles?.where((r) => r.name == name).firstOrNull;
     
-    await pool.execute('DROP ROLE "$name"');
+    await pool.execute('DROP ROLE ${escapeIdentifier(name)}');
     
     if (roleToDrop != null) {
       _cachedRoles?.removeWhere((r) => r.name == name);
@@ -462,17 +485,15 @@ class DatabaseService {
     }
 
     if (password != null && password.isNotEmpty) {
-      final escapedPassword = password.replaceAll("'", "''");
-      options.add("PASSWORD '$escapedPassword'");
+      options.add('PASSWORD ${escapeLiteral(password)}');
     }
 
-    final sql = 'CREATE ROLE "$name" WITH ${options.join(' ')}';
+    final sql = 'CREATE ROLE ${escapeIdentifier(name)} WITH ${options.join(' ')}';
     final pool = _getPool();
     await pool.execute(sql);
 
     if (description != null && description.isNotEmpty) {
-      final escapedDescription = description.replaceAll("'", "''");
-      await pool.execute("COMMENT ON ROLE \"$name\" IS '$escapedDescription'");
+      await pool.execute('COMMENT ON ROLE ${escapeIdentifier(name)} IS ${escapeLiteral(description)}');
     }
     
     // Fetch the full role object from DB to update cache
