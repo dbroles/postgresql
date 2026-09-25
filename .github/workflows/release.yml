@@ -37,14 +37,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path "build/installer"
           & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" /DMyAppVersion="$version" packaging\windows\inno_setup.iss
 
-      - name: Upload Windows Installer to Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: "Release ${{ github.ref_name }}"
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
-          generate_release_notes: true
-          files: |
-            build/installer/user-manager-windows-x64-setup.exe
+          name: release-windows
+          path: build/installer/user-manager-windows-x64-setup.exe
+          retention-days: 1
 
   build-macos:
     name: Build macOS DMG
@@ -96,15 +94,14 @@ jobs:
           zip -r -y "../../../../installer/user-manager-macos-app.zip" "User Manager for PostgreSQL.app"
           cd -
 
-      - name: Upload macOS Assets to Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: "Release ${{ github.ref_name }}"
-          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
-          generate_release_notes: true
-          files: |
+          name: release-macos
+          path: |
             build/installer/user-manager-macos-universal.dmg
             build/installer/user-manager-macos-app.zip
+          retention-days: 1
 
   build-linux:
     name: Build Linux DEB Package
@@ -170,12 +167,31 @@ jobs:
           # 7. Also build portable .tar.gz
           tar -czvf "build/installer/user-manager-linux-x64.tar.gz" -C build/linux/x64/release/bundle .
 
-      - name: Upload Linux Assets to Release
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            build/installer/user-manager-linux-amd64.deb
+            build/installer/user-manager-linux-x64.tar.gz
+          retention-days: 1
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish Release to GitHub
         uses: softprops/action-gh-release@v2
         with:
           name: "Release ${{ github.ref_name }}"
           prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           generate_release_notes: true
-          files: |
-            build/installer/user-manager-linux-amd64.deb
-            build/installer/user-manager-linux-x64.tar.gz
+          files: dist/*
