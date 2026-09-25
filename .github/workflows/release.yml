@@ -147,8 +147,8 @@ jobs:
           # 1. Copy bundle binaries, libraries, and assets
           cp -r build/linux/x64/release/bundle/* "${PKG_DIR}/usr/lib/user_manager/"
 
-          # 2. Symlink binary into /usr/bin
-          ln -s /usr/lib/user_manager/user_manager "${PKG_DIR}/usr/bin/user_manager"
+          # 2. Symlink binary into /usr/bin (relative path as per Debian policy)
+          ln -s ../lib/user_manager/user_manager "${PKG_DIR}/usr/bin/user_manager"
 
           # 3. Copy desktop entry and icon
           cp packaging/linux/user-manager.desktop "${PKG_DIR}/usr/share/applications/dev.dbroles.postgresql.desktop"
@@ -157,9 +157,8 @@ jobs:
           # 4. Generate Debian control file from template
           sed "s/@@VERSION@@/${VERSION}/g" packaging/linux/control.template > "${PKG_DIR}/DEBIAN/control"
 
-          # 5. Fix permissions
+          # 5. Fix permissions (directories and files)
           chmod -R 755 "${PKG_DIR}/usr/lib/user_manager"
-          chmod 755 "${PKG_DIR}/usr/bin/user_manager"
           chmod 644 "${PKG_DIR}/usr/share/applications/dev.dbroles.postgresql.desktop"
           chmod 644 "${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/user_manager.png"
           chmod 755 "${PKG_DIR}/DEBIAN"
