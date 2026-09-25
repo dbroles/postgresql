@@ -1,0 +1,10 @@
+Package: user-manager-for-postgresql
+Version: @@VERSION@@
+Section: database
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0, libsecret-1-0, liblzma5
+Maintainer: dbroles <support@dbroles.dev>
+Homepage: https://github.com/dbroles/postgresql
+Description: User Manager for PostgreSQL
+ Desktop management application for PostgreSQL user roles and permissions.

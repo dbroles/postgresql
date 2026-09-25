@@ -154,19 +154,8 @@ jobs:
           cp packaging/linux/user-manager.desktop "${PKG_DIR}/usr/share/applications/dev.dbroles.postgresql.desktop"
           cp assets/icons/app_icon.png "${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/user_manager.png"
 
-          # 4. Generate Debian control file
-          cat <<EOF > "${PKG_DIR}/DEBIAN/control"
-Package: user-manager-for-postgresql
-Version: ${VERSION}
-Section: database
-Priority: optional
-Architecture: amd64
-Depends: libgtk-3-0, libsecret-1-0, liblzma5
-Maintainer: dbroles <support@dbroles.dev>
-Homepage: https://github.com/dbroles/postgresql
-Description: User Manager for PostgreSQL
- Desktop management application for PostgreSQL user roles and permissions.
-EOF
+          # 4. Generate Debian control file from template
+          sed "s/@@VERSION@@/${VERSION}/g" packaging/linux/control.template > "${PKG_DIR}/DEBIAN/control"
 
           # 5. Fix permissions
           chmod -R 755 "${PKG_DIR}/usr/lib/user_manager"
