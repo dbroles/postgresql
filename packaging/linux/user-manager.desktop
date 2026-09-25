@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=User Manager for PostgreSQL
+GenericName=PostgreSQL User Manager
+Comment=Desktop management utility for PostgreSQL user roles and permissions
+Icon=user_manager
+Exec=user_manager %u
+Terminal=false
+Categories=Development;Database;Utility;
+Keywords=postgresql;postgres;user;role;database;sql;dbroles;
+StartupWMClass=user_manager
