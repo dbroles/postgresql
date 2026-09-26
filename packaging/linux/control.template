@@ -3,7 +3,7 @@ Version: @@VERSION@@
 Section: database
 Priority: optional
 Architecture: amd64
-Depends: libgtk-3-0, libsecret-1-0, liblzma5
+Depends: libgtk-3-0, libsecret-1-0, liblzma5, libgles2, libegl1
 Maintainer: dbroles <support@dbroles.dev>
 Homepage: https://github.com/dbroles/postgresql
 Description: User Manager for PostgreSQL
