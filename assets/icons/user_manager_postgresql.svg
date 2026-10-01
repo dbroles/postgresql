@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <clipPath id="squircle_frame">
+      <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle_frame)">
+    <!-- Base Canvas: Pure White (#ffffff) -->
+    <rect width="1024" height="1024" fill="#ffffff"/>
+
+    <!-- Left Block: Brand Theme Green (#88AA00) -->
+    <path fill="#88AA00" d="
+      M 0,0 
+      L 460,0 
+      C 460,0 640,220 640,400 
+      C 640,560 400,620 380,820 
+      C 370,920 400,980 440,1024 
+      L 0,1024 
+      Z
+    "/>
+
+    <!-- Right Block: Mahogany Slate (#2B1A17) -->
+    <path fill="#2B1A17" d="
+      M 540,0 
+      L 1024,0 
+      L 1024,1024 
+      L 520,1024 
+      C 480,980 450,920 460,820 
+      C 480,620 720,560 720,400 
+      C 720,220 540,0 540,0 
+      Z
+    "/>
+
+    <!-- Top-Right Database Distinction Corner Mark -->
+    <!-- PostgreSQL Corner Mark: Patroni-inspired rounded square cutout -->
+    <rect x="764" y="140" width="92" height="92" rx="28" fill="#ffffff"/>
+    <rect x="788" y="164" width="44" height="44" rx="14" fill="#2B1A17"/>
+
+    <!-- Central User-Database Silhouette in Pure White -->
+    <!-- 1. Floating Circular Avatar Head -->
+    <circle cx="512" cy="270" r="96" fill="#ffffff"/>
+
+    <!-- 2. Three Database Storage Cylinder Discs (Pill Format) -->
+    <!-- Disc 1 (Top / Users) -->
+    <rect x="312" y="420" width="400" height="100" rx="50" fill="#ffffff"/>
+    <!-- Disc 2 (Middle / Roles & Groups) -->
+    <rect x="312" y="556" width="400" height="100" rx="50" fill="#ffffff"/>
+    <!-- Disc 3 (Bottom / Tables & Data) -->
+    <rect x="312" y="692" width="400" height="100" rx="50" fill="#ffffff"/>
+
+    <!-- 3. Disc Inner Color Cutouts reflecting the Two-Tone Split -->
+    <!-- Disc 1 Cutouts -->
+    <rect x="352" y="446" width="140" height="48" rx="24" fill="#88AA00"/>
+    <rect x="532" y="446" width="140" height="48" rx="24" fill="#2B1A17"/>
+
+    <!-- Disc 2 Cutouts -->
+    <rect x="352" y="582" width="140" height="48" rx="24" fill="#88AA00"/>
+    <rect x="532" y="582" width="140" height="48" rx="24" fill="#2B1A17"/>
+
+    <!-- Disc 3 Cutouts -->
+    <rect x="352" y="718" width="140" height="48" rx="24" fill="#88AA00"/>
+    <rect x="532" y="718" width="140" height="48" rx="24" fill="#2B1A17"/>
+  </g>
+</svg>
