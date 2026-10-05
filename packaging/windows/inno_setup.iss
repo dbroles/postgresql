@@ -2,7 +2,7 @@
 ; Generated for Flutter Windows Desktop
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.9.0"
+#define MyAppVersion "1.0.0"
 #endif
 
 #define MyAppName "User Manager for PostgreSQL"
