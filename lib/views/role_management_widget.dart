@@ -286,37 +286,33 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-      child: Wrap(
-        spacing: 8.0,
-        children: [
-          ChoiceChip(
-            label: Text('All ($allCount)'),
-            selected: _selectedSegment == RoleFilterSegment.all,
-            onSelected: (selected) {
-              if (selected) {
-                setState(() => _selectedSegment = RoleFilterSegment.all);
-              }
-            },
+      child: SizedBox(
+        width: double.infinity,
+        child: SegmentedButton<RoleFilterSegment>(
+          segments: [
+            ButtonSegment<RoleFilterSegment>(
+              value: RoleFilterSegment.all,
+              label: Text('All ($allCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+            ),
+            ButtonSegment<RoleFilterSegment>(
+              value: RoleFilterSegment.assigned,
+              label: Text('Assigned ($assignedCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+            ),
+            ButtonSegment<RoleFilterSegment>(
+              value: RoleFilterSegment.available,
+              label: Text('Available ($availableCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+            ),
+          ],
+          selected: {_selectedSegment},
+          onSelectionChanged: (newSelection) {
+            setState(() => _selectedSegment = newSelection.first);
+          },
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          ChoiceChip(
-            label: Text('Assigned ($assignedCount)'),
-            selected: _selectedSegment == RoleFilterSegment.assigned,
-            onSelected: (selected) {
-              if (selected) {
-                setState(() => _selectedSegment = RoleFilterSegment.assigned);
-              }
-            },
-          ),
-          ChoiceChip(
-            label: Text('Available ($availableCount)'),
-            selected: _selectedSegment == RoleFilterSegment.available,
-            onSelected: (selected) {
-              if (selected) {
-                setState(() => _selectedSegment = RoleFilterSegment.available);
-              }
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

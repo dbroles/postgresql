@@ -97,8 +97,8 @@ void main() {
     });
   });
 
-  group('UX Optimizations: Segmented Role Filter Chips', () {
-    testWidgets('filters roles by All, Assigned, and Available', (WidgetTester tester) async {
+  group('UX Optimizations: Segmented Role Filter Buttons', () {
+    testWidgets('renders SegmentedButton and filters roles by All, Assigned, and Available', (WidgetTester tester) async {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -119,7 +119,10 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      // Verify choice chips with counts
+      // Verify SegmentedButton is rendered in a single row
+      expect(find.byType(SegmentedButton<RoleFilterSegment>), findsOneWidget);
+
+      // Verify segment buttons with counts
       expect(find.text('All (3)'), findsOneWidget);
       expect(find.text('Assigned (1)'), findsOneWidget);
       expect(find.text('Available (2)'), findsOneWidget);
