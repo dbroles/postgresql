@@ -1,5 +1,5 @@
 # User Manager for PostgreSQL
-![Main Screen](assets/main_screen.png)
+![Main Screen](assets/main_screen_macos.png)
 
 
 ## TLDR;
