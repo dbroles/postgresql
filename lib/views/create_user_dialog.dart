@@ -77,7 +77,7 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Create a new user that can be granted Row Level Security policies.',
+                  'Create a new role with login attribute.',
                   style: TextStyle(fontSize: 13, color: Colors.grey),
                 ),
                 const SizedBox(height: 24),
