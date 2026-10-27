@@ -61,15 +61,64 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Import Apple Developer ID Certificate
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+
       - name: Build macOS release
         run: flutter build macos --release
 
-      - name: Create macOS DMG and ZIP
+      - name: Sign, Package, and Notarize macOS DMG and ZIP
+        env:
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           brew install create-dmg
           mkdir -p build/installer
 
           APP_PATH="build/macos/Build/Products/Release/User Manager for PostgreSQL.app"
+          DMG_PATH="build/installer/user-manager-macos-universal.dmg"
+          ZIP_PATH="build/installer/user-manager-macos-app.zip"
+
+          if [ -n "$SIGNING_IDENTITY" ]; then
+            echo "Signing nested frameworks and dylibs..."
+            find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -o -name "*.framework" | while read -r item; do
+              codesign --force --options runtime --timestamp --sign "$SIGNING_IDENTITY" "$item"
+            done
+
+            echo "Signing application bundle..."
+            codesign --force --options runtime --timestamp \
+              --entitlements macos/Runner/Release.entitlements \
+              --sign "$SIGNING_IDENTITY" "$APP_PATH"
+
+            codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          else
+            echo "::warning::MACOS_SIGNING_IDENTITY secret is not set. Building unsigned package."
+          fi
+
+          # Create standalone .zip archive of the .app
+          ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+
+          if [ -n "$SIGNING_IDENTITY" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "Submitting .app archive for Apple Notarization..."
+            xcrun notarytool submit "$ZIP_PATH" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --wait
+
+            echo "Stapling notarization ticket to .app..."
+            xcrun stapler staple "$APP_PATH"
+
+            # Recreate .zip so it includes the stapled ticket
+            rm -f "$ZIP_PATH"
+            ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
+          fi
 
           # Create DMG
           create-dmg \
@@ -81,18 +130,30 @@ jobs:
             --hide-extension "User Manager for PostgreSQL.app" \
             --app-drop-link 480 185 \
             --no-internet-enable \
-            "build/installer/user-manager-macos-universal.dmg" \
+            "$DMG_PATH" \
             "$APP_PATH" || true
 
           # Fallback to hdiutil if create-dmg did not output the file
-          if [ ! -f "build/installer/user-manager-macos-universal.dmg" ]; then
-            hdiutil create -volname "User Manager for PostgreSQL" -srcfolder "$APP_PATH" -ov -format UDZO "build/installer/user-manager-macos-universal.dmg"
+          if [ ! -f "$DMG_PATH" ]; then
+            hdiutil create -volname "User Manager for PostgreSQL" -srcfolder "$APP_PATH" -ov -format UDZO "$DMG_PATH"
           fi
 
-          # Also create a standalone .zip archive of the .app
-          cd "build/macos/Build/Products/Release"
-          zip -r -y "../../../../installer/user-manager-macos-app.zip" "User Manager for PostgreSQL.app"
-          cd -
+          if [ -n "$SIGNING_IDENTITY" ]; then
+            echo "Signing DMG..."
+            codesign --force --timestamp --sign "$SIGNING_IDENTITY" "$DMG_PATH"
+
+            if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+              echo "Submitting DMG for Apple Notarization..."
+              xcrun notarytool submit "$DMG_PATH" \
+                --apple-id "$APPLE_ID" \
+                --password "$APPLE_PASSWORD" \
+                --team-id "$APPLE_TEAM_ID" \
+                --wait
+
+              echo "Stapling notarization ticket to DMG..."
+              xcrun stapler staple "$DMG_PATH"
+            fi
+          fi
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
