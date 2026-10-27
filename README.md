@@ -31,9 +31,9 @@ That is something that the Helpdesk person can handle by using this app.
 
 ## Supported Platforms
 
-- **macOS** (Apple Silicon & Intel)
-- **Linux** (Debian, Ubuntu, Fedora, Arch)
-- **Windows** (Windows 10/11)
+- **macOS** (Apple Silicon & Intel) — available on the Mac App Store & [GitHub Releases](https://github.com/dbroles/postgresql/releases)
+- **Linux** (Debian, Ubuntu, Fedora, Arch) — available via [GitHub Releases](https://github.com/dbroles/postgresql/releases)
+- **Windows** (Windows 10/11) — available on the [Microsoft Store](https://apps.microsoft.com/detail/9n5qqm3lg9fv) & [GitHub Releases](https://github.com/dbroles/postgresql/releases)
 - **iOS & iPadOS**
 - **Android**
 
@@ -41,6 +41,14 @@ That is something that the Helpdesk person can handle by using this app.
 
 - **OS-Level Keyring / Keychain**: Database passwords are never stored in plain text. They are secured using `flutter_secure_storage` backed by Apple Keychain, Windows Credential Manager, Linux Secret Service / Keyring, or Android KeyStore.
 - **SSL / TLS**: Supports mandatory SSL/TLS encryption (`sslMode = require`) with live connection security status indicators.
+
+## Code Signing Policy
+
+Free code signing on Windows provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- **Committers & Reviewers:** [dbroles team](https://github.com/dbroles)
+- **Approvers:** [dbroles](https://github.com/dbroles)
+- **Privacy Policy:** This program will not transfer any information to other networked systems unless specifically requested by the user (connecting to the user-configured PostgreSQL database). See [PRIVACY.md](PRIVACY.md) for full details.
 
 ## Running from Source
 
