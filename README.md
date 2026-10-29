@@ -26,7 +26,7 @@ That is something that the Helpdesk person can handle by using this app.
 
 ## Requirements
 
-- **PostgreSQL**: Version 14 or newer (tested on PostgreSQL 14, 15, 16, and 17).
+- **PostgreSQL**: Version 16 or newer (tested on PostgreSQL 16 and 17).
 - **Permissions**: A PostgreSQL role with `CREATEROLE` (**not** `SUPERUSER`) privileges to manage roles and grant memberships.
 
 ## Supported Platforms

@@ -1,6 +1,6 @@
 # Privacy Policy for User Manager for PostgreSQL
 
-**Last Updated:** September 11, 2026  
+**Last Updated:** October 28, 2026  
 **Effective Date:** September 11, 2026
 
 This Privacy Policy explains how **User Manager for PostgreSQL** ("the Application"), developed by Daniel van der Meulen ("we", "us", or "our"), handles your information.
@@ -24,7 +24,6 @@ We respect your privacy and are committed to protecting it. **User Manager for P
 To connect to your PostgreSQL database, the Application allows you to input:
 - Hostname or IP address
 - Port number
-- Database name
 - Username
 - Password
 - SSL / TLS preferences
