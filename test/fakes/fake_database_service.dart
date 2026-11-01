@@ -8,6 +8,7 @@ class FakeDatabaseService extends DatabaseService {
   String? testConnectionResult;
   bool isSuperuserResult;
   bool canCreateRoleResult;
+  bool canSetCategoryParameterResult;
   List<PgRole> mockRoles;
   List<PgMembership> mockMemberships;
   Map<int, List<PgUserGroup>>? mockUserGroups;
@@ -20,6 +21,7 @@ class FakeDatabaseService extends DatabaseService {
   int testConnectionCalls = 0;
   int isCurrentUserSuperuserCalls = 0;
   int canCurrentUserCreateRoleCalls = 0;
+  int canCurrentUserSetCategoryParameterCalls = 0;
   int fetchAllRolesCalls = 0;
   int fetchClusterNameCalls = 0;
   int fetchSslStatusCalls = 0;
@@ -30,6 +32,7 @@ class FakeDatabaseService extends DatabaseService {
   final List<String> grantedRoles = [];
   final List<String> revokedRoles = [];
   final List<String> droppedRoles = [];
+  final Map<String, String?> roleCategories = {};
 
   FakeDatabaseService({
     super.host = 'localhost',
@@ -40,6 +43,7 @@ class FakeDatabaseService extends DatabaseService {
     this.testConnectionResult,
     this.isSuperuserResult = false,
     this.canCreateRoleResult = true,
+    this.canSetCategoryParameterResult = true,
     List<PgRole>? roles,
     List<PgMembership>? memberships,
     this.mockClusterName = 'test_cluster',
@@ -52,7 +56,27 @@ class FakeDatabaseService extends DatabaseService {
   Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
     fetchGroupsForUserCalls++;
     if (mockUserGroups != null && mockUserGroups!.containsKey(userOid)) {
-      return List.of(mockUserGroups![userOid]!);
+      final groups = mockUserGroups![userOid]!.map((g) {
+        if (roleCategories.containsKey(g.name)) {
+          final cat = roleCategories[g.name];
+          return g.copyWith(category: cat, clearCategory: cat == null);
+        }
+        return g;
+      }).toList();
+      groups.sort((a, b) {
+        final catA = a.category?.toLowerCase();
+        final catB = b.category?.toLowerCase();
+        if (catA != null && catB != null) {
+          final cmp = catA.compareTo(catB);
+          if (cmp != 0) return cmp;
+        } else if (catA != null) {
+          return -1;
+        } else if (catB != null) {
+          return 1;
+        }
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+      return groups;
     }
     // Default fallback: generate from mockRoles (groups) and mockMemberships
     final groups = mockRoles.where((r) => !r.canLogin).map((g) {
@@ -74,10 +98,31 @@ class FakeDatabaseService extends DatabaseService {
         grantors: otherGrantors,
         grantable: g.canManage,
         granted: isGrantedByMe,
+        category: roleCategories[g.name],
       );
     }).toList();
 
+    groups.sort((a, b) {
+      final catA = a.category?.toLowerCase();
+      final catB = b.category?.toLowerCase();
+      if (catA != null && catB != null) {
+        final cmp = catA.compareTo(catB);
+        if (cmp != 0) return cmp;
+      } else if (catA != null) {
+        return -1;
+      } else if (catB != null) {
+        return 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
     return groups;
+  }
+
+  @override
+  Future<void> setRoleCategory(String roleName, String? category) async {
+    final trimmed = category?.trim();
+    roleCategories[roleName] = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
   }
 
   @override
@@ -103,6 +148,12 @@ class FakeDatabaseService extends DatabaseService {
       return currentRole.isSuperuser || currentRole.createRole;
     }
     return canCreateRoleResult;
+  }
+
+  @override
+  Future<bool> canCurrentUserSetCategoryParameter({bool forceRefresh = false}) async {
+    canCurrentUserSetCategoryParameterCalls++;
+    return canSetCategoryParameterResult;
   }
 
   @override

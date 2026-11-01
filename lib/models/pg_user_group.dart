@@ -5,6 +5,7 @@ class PgUserGroup {
   final List<String> grantors;
   final bool grantable;
   bool granted;
+  final String? category;
 
   PgUserGroup({
     required this.oid,
@@ -13,6 +14,7 @@ class PgUserGroup {
     required this.grantors,
     required this.grantable,
     required this.granted,
+    this.category,
   });
 
   factory PgUserGroup.fromRow(List<dynamic> row) {
@@ -39,6 +41,9 @@ class PgUserGroup {
       }
     }
 
+    final rawCategory = row.length > 6 ? (row[6] as String?)?.trim() : null;
+    final category = (rawCategory != null && rawCategory.isNotEmpty) ? rawCategory : null;
+
     return PgUserGroup(
       oid: row[0] as int,
       name: row[1] as String,
@@ -46,6 +51,7 @@ class PgUserGroup {
       grantors: parsedGrantors,
       grantable: (row[4] as bool?) ?? false,
       granted: (row[5] as bool?) ?? false,
+      category: category,
     );
   }
 
@@ -56,6 +62,8 @@ class PgUserGroup {
     List<String>? grantors,
     bool? grantable,
     bool? granted,
+    String? category,
+    bool clearCategory = false,
   }) {
     return PgUserGroup(
       oid: oid ?? this.oid,
@@ -64,6 +72,7 @@ class PgUserGroup {
       grantors: grantors ?? List.from(this.grantors),
       grantable: grantable ?? this.grantable,
       granted: granted ?? this.granted,
+      category: clearCategory ? null : (category ?? this.category),
     );
   }
 

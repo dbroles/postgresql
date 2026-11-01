@@ -46,10 +46,12 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   bool _showDescriptions = true;
   bool _showFilters = false;
   bool _showConnectedUser = false;
+  bool _showEditCategoryButton = false;
   String _userSearchQuery = '';
   String? _clusterName;
   bool _isSslEnabled = false;
   bool _canCreateRole = false;
+  bool _canSetCategoryParameter = false;
 
   @override
   void initState() {
@@ -196,6 +198,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       _showDescriptions = prefs.getBool('showDescriptions') ?? true;
       _showFilters = prefs.getBool('showFilters') ?? false;
       _showConnectedUser = prefs.getBool('showConnectedUser') ?? false;
+      _showEditCategoryButton = prefs.getBool('showEditCategoryButton') ?? false;
     });
     
     await _loadInitialData();
@@ -270,6 +273,14 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     });
   }
 
+  Future<void> _saveShowEditCategoryButtonSetting(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('showEditCategoryButton', value);
+    setState(() {
+      _showEditCategoryButton = value;
+    });
+  }
+
   Future<void> _loadInitialData() async {
     setState(() {
       _isLoading = true;
@@ -302,6 +313,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       final clusterName = await _dbService.fetchClusterName();
       final isSsl = await _dbService.fetchSslStatus();
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
+      final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter();
       
       setState(() {
         _users = allRoles.where((r) => r.canLogin).toList();
@@ -309,6 +321,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
         _canCreateRole = canCreateRole;
+        _canSetCategoryParameter = canSetCategory;
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -369,7 +382,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
     try {
       final userGroups = await _dbService.fetchGroupsForUser(user.oid);
-      if (!mounted) return;
+      if (!mounted || _selectedUser?.oid != user.oid) return;
 
       setState(() {
         _selectedUserGroups = userGroups;
@@ -384,6 +397,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               user: user,
               groups: _selectedUserGroups,
               onToggleRole: _toggleRole,
+              onUpdateRoleCategory: (_canSetCategoryParameter && _showEditCategoryButton) ? _updateRoleCategory : null,
               roleSearchController: _roleSearchController,
               showSystemRoles: _showSystemRoles,
               showUngrantableRoles: _showUngrantableRoles,
@@ -399,13 +413,15 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         );
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && _selectedUser?.oid == user.oid) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading memberships: $e')),
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && _selectedUser?.oid == user.oid) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -419,6 +435,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       final clusterName = await _dbService.fetchClusterName();
       final isSsl = await _dbService.fetchSslStatus();
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
+      final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter(forceRefresh: true);
       if (!mounted) return;
 
       setState(() {
@@ -427,6 +444,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
         _canCreateRole = canCreateRole;
+        _canSetCategoryParameter = canSetCategory;
 
         if (_selectedUser != null) {
           final updatedUser = allRoles.where((r) => r.oid == _selectedUser!.oid).firstOrNull;
@@ -483,6 +501,26 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
           SnackBar(content: Text('Action failed: $e. Please reload data.')),
         );
       }
+    }
+  }
+
+  Future<void> _updateRoleCategory(PgUserGroup group, String? newCategory) async {
+    if (_selectedUser == null) return;
+
+    try {
+      await _dbService.setRoleCategory(group.name, newCategory);
+      final currentUserOid = _selectedUser?.oid;
+      if (!mounted || currentUserOid == null) return;
+      final updatedGroups = await _dbService.fetchGroupsForUser(currentUserOid);
+      if (!mounted || _selectedUser?.oid != currentUserOid) return;
+      setState(() {
+        _selectedUserGroups = updatedGroups;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update category: $e')),
+      );
     }
   }
 
@@ -624,6 +662,16 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         setModalState(() {});
                       },
                     ),
+                    if (_canSetCategoryParameter)
+                      SwitchListTile(
+                        title: const Text('Show Category Edit'),
+                        subtitle: const Text('Show button to edit role categories (dbroles.category)'),
+                        value: _showEditCategoryButton,
+                        onChanged: (value) {
+                          _saveShowEditCategoryButtonSetting(value);
+                          setModalState(() {});
+                        },
+                      ),
                     SwitchListTile(
                       title: const Text('Show Ungrantable Roles'),
                       subtitle: const Text('Include roles that cannot be granted due to missing permissions'),
@@ -776,6 +824,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                                     user: _selectedUser!,
                                     groups: _selectedUserGroups,
                                     onToggleRole: _toggleRole,
+                                    onUpdateRoleCategory: (_canSetCategoryParameter && _showEditCategoryButton) ? _updateRoleCategory : null,
                                     isLoading: _isLoading,
                                     roleSearchController: _roleSearchController,
                                     roleSearchFocusNode: _roleSearchFocusNode,

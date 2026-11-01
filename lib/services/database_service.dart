@@ -13,10 +13,12 @@ class DatabaseService {
   Pool? _pool;
 
   List<PgRole>? _cachedRoles;
-  final Map<int, List<PgUserGroup>> _cachedUserGroups = {};
+  List<PgUserGroup>? _cachedGroupCatalog;
+  final Map<int, Map<int, ({bool granted, List<String> grantors})>> _cachedUserMemberships = {};
   String? _cachedClusterName;
   bool? _cachedIsSuperuser;
   bool? _cachedCanCreateRole;
+  bool? _cachedCanSetCategoryParameter;
   int? _cachedCurrentUserOid;
 
   DatabaseService({
@@ -93,10 +95,12 @@ class DatabaseService {
 
   void resetCache() {
     _cachedRoles = null;
-    _cachedUserGroups.clear();
+    _cachedGroupCatalog = null;
+    _cachedUserMemberships.clear();
     _cachedClusterName = null;
     _cachedIsSuperuser = null;
     _cachedCanCreateRole = null;
+    _cachedCanSetCategoryParameter = null;
     _cachedCurrentUserOid = null;
   }
 
@@ -163,15 +167,16 @@ class DatabaseService {
   }
 
   Future<void> _fetchCurrentUserInfo({bool forceRefresh = false}) async {
-    if (!forceRefresh && _cachedCurrentUserOid != null) return;
+    if (!forceRefresh && _cachedCurrentUserOid != null && _cachedCanSetCategoryParameter != null) return;
     final pool = _getPool();
     final result = await pool.execute(
-      "SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role FROM pg_roles WHERE rolname = current_user",
+      "SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role, has_parameter_privilege('dbroles.category', 'SET') AS can_set_category FROM pg_roles WHERE rolname = current_user",
     );
     if (result.isNotEmpty) {
       _cachedCurrentUserOid = result.first[0] as int;
       _cachedIsSuperuser = result.first[1] as bool;
       _cachedCanCreateRole = result.first[2] as bool;
+      _cachedCanSetCategoryParameter = result.first[3] as bool;
     }
   }
 
@@ -183,6 +188,11 @@ class DatabaseService {
   Future<bool> canCurrentUserCreateRole({bool forceRefresh = false}) async {
     await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
     return _cachedCanCreateRole ?? false;
+  }
+
+  Future<bool> canCurrentUserSetCategoryParameter({bool forceRefresh = false}) async {
+    await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
+    return _cachedCanSetCategoryParameter ?? false;
   }
 
   Future<void> setupRoleAdmin(String adminName, String adminPass) async {
@@ -208,7 +218,10 @@ class DatabaseService {
       // 3. Set standard description
       await conn.execute('COMMENT ON ROLE $safeAdmin IS ${escapeLiteral('grant and revoke roles to users')}');
 
-      // 4. Grant ADMIN OPTION on all non-login roles (groups)
+      // 4. Grant SET on parameter dbroles.category to the admin account
+      await conn.execute('GRANT SET ON PARAMETER dbroles.category TO $safeAdmin');
+
+      // 5. Grant ADMIN OPTION on all non-login roles (groups)
       // We skip system roles (pg_*) because some (like pg_database_owner) do not allow members.
       final groupsResult = await conn.execute(
         "SELECT rolname FROM pg_roles WHERE rolcanlogin = false AND rolname NOT LIKE 'pg_%'",
@@ -222,12 +235,15 @@ class DatabaseService {
     // Bulk update: easier to just re-fetch everything as many roles may have been affected
     await _fetchCurrentUserInfo(forceRefresh: true);
     await fetchAllRoles(forceRefresh: true);
-    _cachedUserGroups.clear();
+    _cachedGroupCatalog = null;
+    _cachedUserMemberships.clear();
   }
 
   void clearCache() {
     _cachedRoles = null;
-    _cachedUserGroups.clear();
+    _cachedGroupCatalog = null;
+    _cachedUserMemberships.clear();
+    _cachedCanSetCategoryParameter = null;
   }
 
   Future<List<PgRole>> fetchAllRoles({bool forceRefresh = false}) async {
@@ -335,9 +351,9 @@ class DatabaseService {
     return result.first[0] as bool;
   }
 
-  Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
-    if (!forceRefresh && _cachedUserGroups.containsKey(userOid)) {
-      return _cachedUserGroups[userOid]!;
+  Future<List<PgUserGroup>> _fetchGroupCatalog({bool forceRefresh = false}) async {
+    if (!forceRefresh && _cachedGroupCatalog != null) {
+      return _cachedGroupCatalog!;
     }
 
     final pool = _getPool();
@@ -347,31 +363,130 @@ class DatabaseService {
           g.oid::int,
           g.rolname AS name,
           pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
-          COALESCE(
-              array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text) 
-              FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
-              '{}'::text[]
-          ) AS grantors,
+          '{}'::text[] AS grantors,
           (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-          COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted
+          false AS granted,
+          NULLIF(
+              btrim((
+                  SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+                  FROM unnest(g.rolconfig) AS cfg
+                  WHERE cfg LIKE 'dbroles.category=%'
+                  LIMIT 1
+              )),
+              ''
+          ) AS category
       FROM pg_catalog.pg_roles g
-      LEFT JOIN pg_catalog.pg_auth_members m
-          ON g.oid = m.roleid
-         AND m.member = $1::oid
       LEFT JOIN pg_catalog.pg_auth_members me
           ON g.oid = me.roleid
          AND me.member = CURRENT_USER::regrole::oid
          AND me.admin_option = true
       WHERE NOT g.rolcanlogin
-      GROUP BY g.oid, g.rolname
-      ORDER BY LOWER(g.rolname) ASC;
+      GROUP BY g.oid, g.rolname, g.rolconfig
+      ORDER BY
+          LOWER(NULLIF(
+              btrim((
+                  SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+                  FROM unnest(g.rolconfig) AS cfg
+                  WHERE cfg LIKE 'dbroles.category=%'
+                  LIMIT 1
+              )),
+              ''
+          )) ASC NULLS LAST,
+          LOWER(g.rolname) ASC;
+      ''',
+    );
+
+    _cachedGroupCatalog = result.map((row) => PgUserGroup.fromRow(row)).toList();
+    return _cachedGroupCatalog!;
+  }
+
+  List<String> _parseGrantors(dynamic rawGrantors) {
+    if (rawGrantors is List) {
+      return rawGrantors
+          .where((e) => e != null)
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } else if (rawGrantors is String) {
+      var str = rawGrantors.trim();
+      if (str.startsWith('{') && str.endsWith('}')) {
+        str = str.substring(1, str.length - 1).trim();
+        if (str.isNotEmpty) {
+          return str
+              .split(',')
+              .map((s) => s.replaceAll('"', '').trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+        }
+      }
+    }
+    return [];
+  }
+
+  Future<Map<int, ({bool granted, List<String> grantors})>> _fetchUserMemberships(
+    int userOid, {
+    bool forceRefresh = false,
+  }) async {
+    if (!forceRefresh && _cachedUserMemberships.containsKey(userOid)) {
+      return _cachedUserMemberships[userOid]!;
+    }
+
+    final pool = _getPool();
+    final result = await pool.execute(
+      r'''
+      SELECT
+          m.roleid::int,
+          COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted,
+          COALESCE(
+              array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text)
+              FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
+              '{}'::text[]
+          ) AS grantors
+      FROM pg_catalog.pg_auth_members m
+      WHERE m.member = $1::oid
+      GROUP BY m.roleid;
       ''',
       parameters: [userOid],
     );
 
-    final groups = result.map((row) => PgUserGroup.fromRow(row)).toList();
-    _cachedUserGroups[userOid] = groups;
-    return groups;
+    final memberships = <int, ({bool granted, List<String> grantors})>{};
+    for (final row in result) {
+      final roleOid = row[0] as int;
+      final granted = (row[1] as bool?) ?? false;
+      final grantors = _parseGrantors(row[2]);
+      memberships[roleOid] = (granted: granted, grantors: grantors);
+    }
+
+    _cachedUserMemberships[userOid] = memberships;
+    return memberships;
+  }
+
+  Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
+    final catalog = await _fetchGroupCatalog(forceRefresh: forceRefresh);
+    final memberships = await _fetchUserMemberships(userOid, forceRefresh: forceRefresh);
+
+    return catalog.map((group) {
+      final membership = memberships[group.oid];
+      return group.copyWith(
+        granted: membership?.granted ?? false,
+        grantors: membership?.grantors ?? const [],
+      );
+    }).toList();
+  }
+
+  Future<void> setRoleCategory(String roleName, String? category) async {
+    final pool = _getPool();
+    final trimmed = category?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) {
+      await pool.execute(
+        'ALTER ROLE ${escapeIdentifier(roleName)} SET dbroles.category = ${escapeLiteral(trimmed)}',
+      );
+    } else {
+      await pool.execute(
+        'ALTER ROLE ${escapeIdentifier(roleName)} RESET dbroles.category',
+      );
+    }
+    _cachedGroupCatalog = null;
   }
 
   Future<void> grantRole(String userName, String roleName, {int? userOid}) async {
@@ -386,13 +501,17 @@ class DatabaseService {
       if (index != -1) _cachedRoles![index] = updatedRole;
     }
 
-    if (userOid != null && _cachedUserGroups.containsKey(userOid)) {
-      final group = _cachedUserGroups[userOid]!.where((g) => g.name == roleName).firstOrNull;
+    if (userOid != null && _cachedUserMemberships.containsKey(userOid) && _cachedGroupCatalog != null) {
+      final group = _cachedGroupCatalog!.where((g) => g.name == roleName).firstOrNull;
       if (group != null) {
-        group.granted = true;
+        final existing = _cachedUserMemberships[userOid]![group.oid];
+        _cachedUserMemberships[userOid]![group.oid] = (
+          granted: true,
+          grantors: existing?.grantors ?? const [],
+        );
       }
     } else if (userOid != null) {
-      _cachedUserGroups.remove(userOid);
+      _cachedUserMemberships.remove(userOid);
     }
   }
 
@@ -407,13 +526,17 @@ class DatabaseService {
       if (index != -1) _cachedRoles![index] = updatedRole;
     }
 
-    if (userOid != null && _cachedUserGroups.containsKey(userOid)) {
-      final group = _cachedUserGroups[userOid]!.where((g) => g.name == roleName).firstOrNull;
+    if (userOid != null && _cachedUserMemberships.containsKey(userOid) && _cachedGroupCatalog != null) {
+      final group = _cachedGroupCatalog!.where((g) => g.name == roleName).firstOrNull;
       if (group != null) {
-        group.granted = false;
+        final existing = _cachedUserMemberships[userOid]![group.oid];
+        _cachedUserMemberships[userOid]![group.oid] = (
+          granted: false,
+          grantors: existing?.grantors ?? const [],
+        );
       }
     } else if (userOid != null) {
-      _cachedUserGroups.remove(userOid);
+      _cachedUserMemberships.remove(userOid);
     }
   }
 
@@ -425,7 +548,8 @@ class DatabaseService {
     
     if (roleToDrop != null) {
       _cachedRoles?.removeWhere((r) => r.name == name);
-      _cachedUserGroups.clear();
+      _cachedGroupCatalog = null;
+      _cachedUserMemberships.clear();
     }
   }
 
@@ -503,6 +627,9 @@ class DatabaseService {
     if (_cachedRoles != null) {
       _cachedRoles!.add(newRole);
       _cachedRoles!.sort((a, b) => a.name.compareTo(b.name));
+    }
+    if (!canLogin) {
+      _cachedGroupCatalog = null;
     }
 
     return newRole;
