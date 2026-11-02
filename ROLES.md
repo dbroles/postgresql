@@ -23,9 +23,9 @@ Each role has eight attributes:
 - Bypass RLS
 - Password
 
-When a user is selected on the left side of the screen, his attributes are shown on the right side of the screen:  
+When a user is selected on the left side of the screen, their attributes are shown at the top of the right pane:  
 ![Login Attributes](assets/attributes.png)  
-Of course green means set and grey means not set.
+The application's primary theme color (green by default) indicates that an attribute is set, while grey indicates it is not set.
 
 The `Login` attribute determines if a role can log in to the database. This defines the distinction in this application:
 - If `Login` is true, it is a **User** and appears on the **left**
@@ -33,10 +33,10 @@ The `Login` attribute determines if a role can log in to the database. This defi
 
 Throughout the application and documentation, objects on the left (`rolcanlogin = true`) are **Users**, and objects on the right (`rolcanlogin = false`) are **Roles**.
 
-Attributes are **not** inherited by child roles. If a role called `DBAs` has the Superuser attribute set to **true**, members of that role are **not** superusers. If the `SET` option is true they can become Superuser however, see the section on [Granting](Granting).
+Attributes are **not** inherited by child roles. If a role called `DBAs` has the Superuser attribute set to **true**, members of that role are **not** superusers. If the `SET` option is true they can become Superuser however, see the section on [Granting](#granting).
 
-Users and roles can have constraints by setting a CONNECTION LIMIT or a VALID UNTIL attribute.  
-They can have security labels (MAC/SELinux) by applying a SECURITY LABEL or COMMENT.
+Users and roles can have constraints by setting a `CONNECTION LIMIT` or a `VALID UNTIL` attribute (used for password expiration and automated grouping of expired users).  
+They can have security labels (MAC/SELinux) by applying a `SECURITY LABEL` or `COMMENT`.
 
 ### 2. Object-Level Privileges
 There are many different privileges on many different objects.  
@@ -194,5 +194,54 @@ ORDER BY
     )) ASC NULLS LAST,
     LOWER(g.rolname) ASC;
 ```
+
+The query to fetch a user's role memberships (and track grantors) is:
+```sql
+SELECT
+    m.roleid::int,
+    COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted,
+    COALESCE(
+        array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text)
+        FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
+        '{}'::text[]
+    ) AS grantors
+FROM pg_catalog.pg_auth_members m
+WHERE m.member = $1::oid
+GROUP BY m.roleid;
+```
+
+## UI Action Visibility & Permission Rules
+
+The application determines which actions and settings are visible based on the privileges of the connected user (`CURRENT_USER`) and the properties of the selected **User** or **Role**:
+
+### 1. Create User (`+` FAB)
+- **Visible when**: The connected account has the `CREATEROLE` attribute (`rolcreaterole = true`).
+
+### 2. Edit User (AppBar Edit Icon)
+- **Visible when**:
+  1. The connected account has the `CREATEROLE` attribute (`_canCreateRole = true`).
+  2. The connected account has `ADMIN OPTION` on the selected user (`user.isAdmin = true`).
+
+### 3. Delete User (AppBar Delete Icon)
+- **Visible when all three conditions are met**:
+  1. **PostgreSQL Entitlement (`user.canDrop = true`)**: The connected account has `CREATEROLE` **and** `ADMIN OPTION` on the selected user (`is_admin AND (is_super OR can_create)`).
+  2. **No Elevated Attributes**: The selected user does **not** have any special privileges (`!isSuperuser`, `!createRole`, `!createDb`, `!replication`, `!bypassRls`).
+  3. **No External Grantors**: None of the selected user's assigned roles were granted by another grantor (`grantors.isEmpty`).
+
+### 4. Grant / Revoke Role (Role Checkbox)
+- **Enabled when**: The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
+
+### 5. Edit Role Category (`dbroles.category`)
+- **Setting ("Show Category Edit") visible in App Settings when**:
+  - The connected account has `SET` privilege on the `dbroles.category` parameter (`has_parameter_privilege('dbroles.category', 'SET') = true`).
+  - To grant this privilege to the `dbroles` admin account, run as a superuser:
+    ```sql
+    GRANT SET ON PARAMETER dbroles.category TO dbroles;
+    ```
+- **Edit Category button visible on a Role row when**:
+  1. The connected account has `SET` privilege on `dbroles.category`.
+  2. The **Show Category Edit** setting is enabled in App Settings.
+  3. The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
+
 
 ---

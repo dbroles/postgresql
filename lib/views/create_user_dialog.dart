@@ -1,5 +1,7 @@
+import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/pg_role.dart';
 import '../services/database_service.dart';
 
@@ -57,6 +59,81 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
       _validUntilController.text =
           _validUntil != null ? PgRole.formatDate(_validUntil!) : '';
     });
+  }
+
+  static String generateStrongPassword({int length = 16}) {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghijkmnopqrstuvwxyz';
+    const digits = '23456789';
+    const symbols = '!@#\$%^&*()-_=+';
+    const all = '$upper$lower$digits$symbols';
+
+    final rng = Random.secure();
+    final chars = <String>[
+      upper[rng.nextInt(upper.length)],
+      lower[rng.nextInt(lower.length)],
+      digits[rng.nextInt(digits.length)],
+      symbols[rng.nextInt(symbols.length)],
+      for (int i = 4; i < length; i++) all[rng.nextInt(all.length)],
+    ];
+    chars.shuffle(rng);
+    return chars.join();
+  }
+
+  void _generatePassword() {
+    if (_isSaving) return;
+    final generated = generateStrongPassword();
+    setState(() {
+      _passController.text = generated;
+      _obscurePassword = false;
+    });
+  }
+
+  static String _formatDateTime(DateTime dt) {
+    final date = PgRole.formatDate(dt);
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$date $h:$m:$s';
+  }
+
+  String buildOnboardingCredentials({DateTime? now}) {
+    final timestamp = _formatDateTime(now ?? DateTime.now());
+    final host = widget.dbService.host;
+    final port = widget.dbService.port;
+    final database = widget.dbService.database;
+    final username = _nameController.text.trim();
+    final password = _passController.text;
+
+    final encodedUser = Uri.encodeComponent(username);
+    final encodedPass = Uri.encodeComponent(password);
+    final authPart = password.isNotEmpty
+        ? '$encodedUser:$encodedPass@'
+        : (username.isNotEmpty ? '$encodedUser@' : '');
+    final uri = 'postgresql://$authPart$host:$port/$database';
+
+    final buffer = StringBuffer()
+      ..writeln(timestamp)
+      ..writeln('Host: $host')
+      ..writeln('Port: $port')
+      ..writeln('Username: $username')
+      ..writeln('Password: $password');
+
+    if (_validUntil != null) {
+      buffer.writeln('Valid Until: ${PgRole.formatDate(_validUntil!)}');
+    }
+
+    buffer.write('URI: $uri');
+    return buffer.toString();
+  }
+
+  Future<void> _copyOnboardingCredentials() async {
+    final text = buildOnboardingCredentials();
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      const SnackBar(content: Text('Onboarding credentials copied to clipboard.')),
+    );
   }
 
   Widget _buildQuickDateChips() {
@@ -269,9 +346,20 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                     labelText: 'Password',
                     hintText: _isEditMode ? 'Leave blank to keep current password' : null,
                     border: const OutlineInputBorder(),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.casino_outlined),
+                          tooltip: 'Generate password',
+                          onPressed: _generatePassword,
+                        ),
+                        IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -306,6 +394,12 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                     labelText: 'Description',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _isSaving ? null : _copyOnboardingCredentials,
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copy Onboarding Credentials'),
                 ),
                 const SizedBox(height: 8),
               ],

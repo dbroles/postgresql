@@ -149,13 +149,14 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
   }
 
   Future<void> _handleRefresh() async {
+    final shouldForceRefresh = widget.onRefresh == null;
     if (widget.onRefresh != null) {
       await widget.onRefresh!();
     }
     if (widget.dbService != null) {
       try {
-        final allRoles = await widget.dbService!.fetchAllRoles(forceRefresh: true);
-        final updatedGroups = await widget.dbService!.fetchGroupsForUser(_currentUser.oid, forceRefresh: true);
+        final allRoles = await widget.dbService!.fetchAllRoles(forceRefresh: shouldForceRefresh);
+        final updatedGroups = await widget.dbService!.fetchGroupsForUser(_currentUser.oid, forceRefresh: shouldForceRefresh);
         if (!mounted) return;
 
         final updatedUser = allRoles.where((r) => r.oid == _currentUser.oid).firstOrNull;
@@ -199,7 +200,7 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
-          if (widget.onEditPressed != null)
+          if (widget.onEditPressed != null && _currentUser.isAdmin)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit User',

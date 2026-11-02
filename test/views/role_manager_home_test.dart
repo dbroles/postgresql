@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1500,29 +1501,101 @@ void main() {
       expect(created.validUntilDateString, PgRole.formatDate(today));
       expect(created.isValid, isFalse);
     });
-  });
 
-  group('Edit User Setting and Flow', () {
-    testWidgets('Show User Edit setting is only shown when running account has CREATEROLE', (tester) async {
-      final fakeDbWithoutCreateRole = FakeDatabaseService(
-        canCreateRoleResult: false,
-        roles: sampleRoles,
+    testWidgets('Password generator populates strong password and Copy Onboarding Credentials copies formatted summary and URI', (tester) async {
+      String? copiedText;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall methodCall) async {
+          if (methodCall.method == 'Clipboard.setData') {
+            final args = methodCall.arguments as Map<dynamic, dynamic>;
+            copiedText = args['text'] as String?;
+          }
+          return null;
+        },
+      );
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        );
+      });
+
+      final fakeDb = FakeDatabaseService(
+        host: 'db.example.com',
+        port: 5433,
       );
 
       await tester.pumpWidget(
         MaterialApp(
-          home: RoleManagerHome(dbService: fakeDbWithoutCreateRole),
+          home: Scaffold(
+            body: CreateUserDialog(dbService: fakeDb),
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byIcon(Icons.settings));
+      await tester.enterText(find.widgetWithText(TextFormField, 'Username'), 'karen');
+
+      // Tap Generate password button
+      final generateBtn = find.byTooltip('Generate password');
+      expect(generateBtn, findsOneWidget);
+      await tester.tap(generateBtn);
       await tester.pumpAndSettle();
 
-      expect(find.widgetWithText(SwitchListTile, 'Show User Edit'), findsNothing);
-    });
+      // Verify password field is populated with a 16-char password and un-obscured
+      final passField = tester.widget<TextField>(
+        find.descendant(
+          of: find.widgetWithText(TextFormField, 'Password'),
+          matching: find.byType(TextField),
+        ),
+      );
+      final generatedPassword = passField.controller!.text;
+      expect(generatedPassword.length, 16);
+      expect(passField.obscureText, isFalse);
 
-    testWidgets('Show User Edit defaults to false, toggles Edit User button in AppBar, and updates user via CreateUserDialog', (tester) async {
+      // Select +30 days
+      await tester.tap(find.widgetWithText(ChoiceChip, '+30'));
+      await tester.pumpAndSettle();
+
+      // Tap Copy Onboarding Credentials
+      final copyBtn = find.text('Copy Onboarding Credentials');
+      expect(copyBtn, findsOneWidget);
+      await tester.ensureVisible(copyBtn);
+      await tester.pumpAndSettle();
+      await tester.tap(copyBtn);
+      await tester.pumpAndSettle();
+
+      expect(copiedText, isNotNull);
+      final lines = copiedText!.split('\n');
+      // First line is YYYY-MM-DD HH:MM:SS
+      expect(RegExp(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$').hasMatch(lines[0]), isTrue);
+      expect(copiedText, contains('Host: db.example.com'));
+      expect(copiedText, contains('Port: 5433'));
+      expect(copiedText, contains('Username: karen'));
+      expect(copiedText, contains('Password: $generatedPassword'));
+      final now = DateTime.now();
+      final plus30 = DateTime(now.year, now.month, now.day + 30);
+      expect(copiedText, contains('Valid Until: ${PgRole.formatDate(plus30)}'));
+      final encodedPass = Uri.encodeComponent(generatedPassword);
+      expect(
+        copiedText,
+        contains('URI: postgresql://karen:$encodedPass@db.example.com:5433/postgres'),
+      );
+      expect(find.text('Onboarding credentials copied to clipboard.'), findsOneWidget);
+    });
+  });
+
+  group('Edit User Button Visibility and Flow (Desktop & Mobile)', () {
+    testWidgets('desktop: Edit User button is visible only when CREATEROLE is true AND selected user has ADMIN', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'db_host': 'localhost',
+        'db_port': 5432,
+        'db_user': 'test_admin',
+        'db_pass': '',
+        'showUsersWithoutAdminOption': true,
+      });
+
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -1542,29 +1615,17 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Select alice
-      await tester.tap(find.text('alice'));
-      await tester.pumpAndSettle();
-
-      // Edit User button is hidden by default (showEditUserButton defaults to false)
+      // Initially no user selected -> no Edit User button
       expect(find.byTooltip('Edit User'), findsNothing);
 
-      // Open settings and enable Show User Edit
-      await tester.tap(find.byIcon(Icons.settings));
+      // Select charlie (isAdmin: false) -> no Edit User button
+      await tester.tap(find.text('charlie'));
       await tester.pumpAndSettle();
+      expect(find.byTooltip('Edit User'), findsNothing);
 
-      final editSwitchFinder = find.widgetWithText(SwitchListTile, 'Show User Edit');
-      expect(editSwitchFinder, findsOneWidget);
-      expect(tester.widget<SwitchListTile>(editSwitchFinder).value, isFalse);
-
-      await tester.tap(editSwitchFinder);
+      // Select alice (isAdmin: true) -> Edit User button is visible
+      await tester.tap(find.text('alice'));
       await tester.pumpAndSettle();
-
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // Edit User button is now visible in AppBar
       final editButton = find.byTooltip('Edit User');
       expect(editButton, findsOneWidget);
 
@@ -1583,6 +1644,81 @@ void main() {
 
       expect(find.text('User Manager - alice_updated'), findsOneWidget);
       expect(find.text('Senior Dev User'), findsWidgets);
+    });
+
+    testWidgets('desktop: Edit User button is hidden when connected user lacks CREATEROLE', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: false,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Edit User'), findsNothing);
+    });
+
+    testWidgets('mobile: Edit User button is visible on RoleMembershipPage only when CREATEROLE and ADMIN are true', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'db_host': 'localhost',
+        'db_port': 5432,
+        'db_user': 'test_admin',
+        'db_pass': '',
+        'showUsersWithoutAdminOption': true,
+      });
+
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Tap charlie (isAdmin: false) -> navigates to RoleMembershipPage without Edit User button
+      await tester.tap(find.text('charlie'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Edit User'), findsNothing);
+
+      // Navigate back and select alice (isAdmin: true)
+      final NavigatorState navigator = tester.state(find.byType(Navigator));
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      final editButton = find.byTooltip('Edit User');
+      expect(editButton, findsOneWidget);
+
+      await tester.tap(editButton);
+      await tester.pumpAndSettle();
+      expect(find.text('Edit User'), findsOneWidget);
     });
   });
 }

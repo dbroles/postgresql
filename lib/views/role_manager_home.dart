@@ -47,7 +47,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   bool _showFilters = false;
   bool _showConnectedUser = false;
   bool _showEditCategoryButton = false;
-  bool _showEditUserButton = false;
   String _userSearchQuery = '';
   String? _clusterName;
   bool _isSslEnabled = false;
@@ -200,7 +199,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       _showFilters = prefs.getBool('showFilters') ?? false;
       _showConnectedUser = prefs.getBool('showConnectedUser') ?? false;
       _showEditCategoryButton = prefs.getBool('showEditCategoryButton') ?? false;
-      _showEditUserButton = prefs.getBool('showEditUserButton') ?? false;
     });
     
     await _loadInitialData();
@@ -280,14 +278,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await prefs.setBool('showEditCategoryButton', value);
     setState(() {
       _showEditCategoryButton = value;
-    });
-  }
-
-  Future<void> _saveShowEditUserButtonSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showEditUserButton', value);
-    setState(() {
-      _showEditUserButton = value;
     });
   }
 
@@ -453,7 +443,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               currentUsername: _dbService.username,
               isDeletable: _isUserDeletable(user),
               onDeletePressed: _handleDeleteUser,
-              onEditPressed: (_canCreateRole && _showEditUserButton) ? _handleEditUser : null,
+              onEditPressed: _canCreateRole ? _handleEditUser : null,
               dbService: _dbService,
               onRefresh: _refreshRolesData,
             ),
@@ -604,6 +594,10 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     return filtered.toList();
   }
 
+  bool _isUserEditable(PgRole user) {
+    return _canCreateRole && user.isAdmin;
+  }
+
   bool _isUserDeletable(PgRole user) {
     // Condition 0: PostgreSQL Entitlement (CREATEROLE + ADMIN OPTION on this role)
     if (!user.canDrop) {
@@ -710,16 +704,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         setModalState(() {});
                       },
                     ),
-                    if (_canCreateRole)
-                      SwitchListTile(
-                        title: const Text('Show User Edit'),
-                        subtitle: const Text('Show button to edit user details'),
-                        value: _showEditUserButton,
-                        onChanged: (value) {
-                          _saveShowEditUserButtonSetting(value);
-                          setModalState(() {});
-                        },
-                      ),
                     if (_canSetCategoryParameter)
                       SwitchListTile(
                         title: const Text('Show Category Edit'),
@@ -815,7 +799,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
         actions: [
-          if (_selectedUser != null && _canCreateRole && _showEditUserButton && !isNarrow)
+          if (_selectedUser != null && _isUserEditable(_selectedUser!) && !isNarrow)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit User',
