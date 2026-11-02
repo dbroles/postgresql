@@ -1442,6 +1442,64 @@ void main() {
       expect(find.text('Temp access'), findsOneWidget);
       expect(find.text('2028-01-15'), findsOneWidget);
     });
+
+    testWidgets('Expire Now / +30 / +90 / +365 chips set target dates and Expire Now marks user expired', (tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: [],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateUserDialog(dbService: fakeDb),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final plus30 = DateTime(today.year, today.month, today.day + 30);
+      final plus90 = DateTime(today.year, today.month, today.day + 90);
+      final plus365 = DateTime(today.year, today.month, today.day + 365);
+
+      // Verify all 4 chips exist
+      expect(find.widgetWithText(ChoiceChip, 'Expire Now'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '+30'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '+90'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, '+365'), findsOneWidget);
+
+      // Tap +30
+      await tester.tap(find.widgetWithText(ChoiceChip, '+30'));
+      await tester.pumpAndSettle();
+      expect(find.text(PgRole.formatDate(plus30)), findsOneWidget);
+
+      // Tap +90
+      await tester.tap(find.widgetWithText(ChoiceChip, '+90'));
+      await tester.pumpAndSettle();
+      expect(find.text(PgRole.formatDate(plus90)), findsOneWidget);
+
+      // Tap +365
+      await tester.tap(find.widgetWithText(ChoiceChip, '+365'));
+      await tester.pumpAndSettle();
+      expect(find.text(PgRole.formatDate(plus365)), findsOneWidget);
+
+      // Tap Expire Now -> sets today (00:00:00), which is already expired
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Expire Now'));
+      await tester.pumpAndSettle();
+      expect(find.text(PgRole.formatDate(today)), findsOneWidget);
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'Username'), 'locked_user');
+      await tester.tap(find.text('Create User'));
+      await tester.pumpAndSettle();
+
+      expect(fakeDb.mockRoles.length, 1);
+      final created = fakeDb.mockRoles.first;
+      expect(created.name, 'locked_user');
+      expect(created.validUntilDateString, PgRole.formatDate(today));
+      expect(created.isValid, isFalse);
+    });
   });
 
   group('Edit User Setting and Flow', () {

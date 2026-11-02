@@ -357,6 +357,13 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
   }
 
+  static int _compareUsers(PgRole a, PgRole b) {
+    if (a.isValid != b.isValid) {
+      return a.isValid ? -1 : 1;
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
   Future<void> _createNewUser() async {
     final result = await showDialog<PgRole>(
       context: context,
@@ -368,11 +375,11 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       setState(() {
         if (result.canLogin) {
           _users.add(result);
-          _users.sort((a, b) => a.name.compareTo(b.name));
+          _users.sort(_compareUsers);
         }
         if (!result.canLogin) {
           _groups.add(result);
-          _groups.sort((a, b) => a.name.compareTo(b.name));
+          _groups.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
         }
       });
       
@@ -401,7 +408,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         } else if (updatedUser.canLogin) {
           _users.add(updatedUser);
         }
-        _users.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _users.sort(_compareUsers);
         if (_selectedUser?.oid == user.oid || _selectedUser?.name == user.name) {
           _selectedUser = updatedUser;
         }

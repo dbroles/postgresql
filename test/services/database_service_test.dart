@@ -51,6 +51,33 @@ void main() {
       final role = PgRole.fromRow(row);
       expect(role.validUntil, isNull);
       expect(role.validUntilDateString, isNull);
+      expect(role.isValid, isTrue);
+      expect(role.isExpiringSoon, isFalse);
+    });
+
+    test('fromRow parses is_valid and is_expiring_soon columns', () {
+      final row = [
+        103,
+        'expiring_user',
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        true,
+        true,
+        '2026-11-05',
+        true,
+        true,
+      ];
+      final role = PgRole.fromRow(row);
+      expect(role.validUntilDateString, '2026-11-05');
+      expect(role.isValid, isTrue);
+      expect(role.isExpiringSoon, isTrue);
     });
   });
 

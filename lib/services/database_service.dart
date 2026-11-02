@@ -312,6 +312,12 @@ class DatabaseService {
                   THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
               END AS valid_until,
               (r.rolvaliduntil IS NULL OR r.rolvaliduntil > CURRENT_TIMESTAMP) AS is_valid,
+              (
+                  r.rolvaliduntil IS NOT NULL
+                  AND isfinite(r.rolvaliduntil)
+                  AND r.rolvaliduntil > CURRENT_TIMESTAMP
+                  AND r.rolvaliduntil <= CURRENT_TIMESTAMP + INTERVAL '7 days'
+              ) AS is_expiring_soon,
               me.is_super,
               me.can_create
           FROM pg_catalog.pg_roles r
@@ -333,9 +339,10 @@ class DatabaseService {
           is_admin,
           (is_admin AND (is_super OR can_create)) AS can_drop,
           valid_until,
-          is_valid
+          is_valid,
+          is_expiring_soon
       FROM user_roles
-      ORDER BY LOWER(name) ASC
+      ORDER BY is_valid DESC, LOWER(name) ASC
     ''',
       parameters: name != null ? [name] : null,
     );
@@ -638,7 +645,7 @@ class DatabaseService {
     
     if (_cachedRoles != null) {
       _cachedRoles!.add(newRole);
-      _cachedRoles!.sort((a, b) => a.name.compareTo(b.name));
+      _cachedRoles!.sort(_compareRoles);
     }
     if (!canLogin) {
       _cachedGroupCatalog = null;
@@ -701,9 +708,16 @@ class DatabaseService {
       } else {
         _cachedRoles!.add(updatedRole);
       }
-      _cachedRoles!.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      _cachedRoles!.sort(_compareRoles);
     }
 
     return updatedRole;
+  }
+
+  static int _compareRoles(PgRole a, PgRole b) {
+    if (a.isValid != b.isValid) {
+      return a.isValid ? -1 : 1;
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }
 }

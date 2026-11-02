@@ -124,6 +124,12 @@ user_roles AS (
             THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
         END AS valid_until,
         (r.rolvaliduntil IS NULL OR r.rolvaliduntil > CURRENT_TIMESTAMP) AS is_valid,
+        (
+            r.rolvaliduntil IS NOT NULL
+            AND isfinite(r.rolvaliduntil)
+            AND r.rolvaliduntil > CURRENT_TIMESTAMP
+            AND r.rolvaliduntil <= CURRENT_TIMESTAMP + INTERVAL '7 days'
+        ) AS is_expiring_soon,
         me.is_super,
         me.can_create
     FROM pg_catalog.pg_roles r
@@ -145,9 +151,10 @@ SELECT
     is_admin,
     (is_admin AND (is_super OR can_create)) AS can_drop,
     valid_until,
-    is_valid
+    is_valid,
+    is_expiring_soon
 FROM user_roles
-ORDER BY LOWER(name) ASC;
+ORDER BY is_valid DESC, LOWER(name) ASC;
 ```
 
 The query to select the roles catalog is:

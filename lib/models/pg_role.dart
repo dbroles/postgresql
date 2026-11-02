@@ -14,6 +14,7 @@ class PgRole {
   final bool canDrop;
   final DateTime? validUntil;
   final bool isValid;
+  final bool isExpiringSoon;
   bool get canManage => isAdmin;
 
   /// Formats a [DateTime] as an ISO date string ('YYYY-MM-DD').
@@ -31,9 +32,16 @@ class PgRole {
   static bool _defaultIsValid(DateTime? validUntil) {
     if (validUntil == null) return true;
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
     final target = DateTime(validUntil.year, validUntil.month, validUntil.day);
-    return !target.isBefore(today);
+    return target.isAfter(now);
+  }
+
+  static bool _defaultIsExpiringSoon(DateTime? validUntil, bool isValid) {
+    if (validUntil == null || !isValid) return false;
+    final now = DateTime.now();
+    final target = DateTime(validUntil.year, validUntil.month, validUntil.day);
+    final threshold = now.add(const Duration(days: 7));
+    return target.isAfter(now) && !target.isAfter(threshold);
   }
 
   PgRole({
@@ -53,11 +61,17 @@ class PgRole {
     bool? canManage,
     DateTime? validUntil,
     bool? isValid,
+    bool? isExpiringSoon,
   })  : isAdmin = canManage ?? isAdmin,
         validUntil = validUntil != null
             ? DateTime(validUntil.year, validUntil.month, validUntil.day)
             : null,
-        isValid = isValid ?? _defaultIsValid(validUntil);
+        isValid = isValid ?? _defaultIsValid(validUntil),
+        isExpiringSoon = isExpiringSoon ??
+            _defaultIsExpiringSoon(
+              validUntil,
+              isValid ?? _defaultIsValid(validUntil),
+            );
 
   static DateTime? _parseValidUntil(dynamic raw) {
     if (raw == null) return null;
@@ -87,6 +101,8 @@ class PgRole {
         row.length > 13 ? _parseValidUntil(row[13]) : null;
     final bool? isValid =
         row.length > 14 ? (row[14] as bool?) : null;
+    final bool? isExpiringSoon =
+        row.length > 15 ? (row[15] as bool?) : null;
     return PgRole(
       oid: row[0] as int,
       name: row[1] as String,
@@ -103,6 +119,7 @@ class PgRole {
       canDrop: canDrop,
       validUntil: validUntil,
       isValid: isValid,
+      isExpiringSoon: isExpiringSoon,
     );
   }
 

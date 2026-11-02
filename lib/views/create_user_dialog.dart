@@ -59,6 +59,33 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
     });
   }
 
+  Widget _buildQuickDateChips() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final presets = <({String label, DateTime date})>[
+      (label: 'Expire Now', date: today),
+      (label: '+30', date: DateTime(today.year, today.month, today.day + 30)),
+      (label: '+90', date: DateTime(today.year, today.month, today.day + 90)),
+      (label: '+365', date: DateTime(today.year, today.month, today.day + 365)),
+    ];
+
+    return Wrap(
+      spacing: 8.0,
+      runSpacing: 6.0,
+      children: presets.map((preset) {
+        final isSelected = _validUntil != null &&
+            _validUntil!.year == preset.date.year &&
+            _validUntil!.month == preset.date.month &&
+            _validUntil!.day == preset.date.day;
+        return ChoiceChip(
+          label: Text(preset.label),
+          selected: isSelected,
+          onSelected: _isSaving ? null : (_) => _setValidUntil(preset.date),
+        );
+      }).toList(),
+    );
+  }
+
   Future<void> _pickValidUntilDate() async {
     if (_isSaving) return;
     final now = DateTime.now();
@@ -270,6 +297,8 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                           ),
                   ),
                 ),
+                const SizedBox(height: 8),
+                _buildQuickDateChips(),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _descController,
