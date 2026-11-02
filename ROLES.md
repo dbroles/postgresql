@@ -222,16 +222,24 @@ The application determines which actions and settings are visible based on the p
   1. The connected account has the `CREATEROLE` attribute (`_canCreateRole = true`).
   2. The connected account has `ADMIN OPTION` on the selected user (`user.isAdmin = true`).
 
-### 3. Delete User (AppBar Delete Icon)
+### 3. Duplicate User (AppBar Duplicate Icon)
+- **Visible when**:
+  1. A user is selected.
+  2. The connected account has the `CREATEROLE` attribute (`_canCreateRole = true`).
+- **Behavior**:
+  - Pre-populates the new user's username with `<name>_copy`, along with the original user's description, attributes, and password expiration date (`VALID UNTIL`).
+  - Displays all roles currently assigned to the source user, with grantable roles pre-selected, allowing the admin to easily customize which role memberships are copied to the new user.
+
+### 4. Delete User (AppBar Delete Icon)
 - **Visible when all three conditions are met**:
   1. **PostgreSQL Entitlement (`user.canDrop = true`)**: The connected account has `CREATEROLE` **and** `ADMIN OPTION` on the selected user (`is_admin AND (is_super OR can_create)`).
   2. **No Elevated Attributes**: The selected user does **not** have any special privileges (`!isSuperuser`, `!createRole`, `!createDb`, `!replication`, `!bypassRls`).
   3. **No External Grantors**: None of the selected user's assigned roles were granted by another grantor (`grantors.isEmpty`).
 
-### 4. Grant / Revoke Role (Role Checkbox)
+### 5. Grant / Revoke Role (Role Checkbox)
 - **Enabled when**: The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
 
-### 5. Edit Role Category (`dbroles.category`)
+### 6. Edit Role Category (`dbroles.category`)
 - **Setting ("Show Category Edit") visible in App Settings when**:
   - The connected account has `SET` privilege on the `dbroles.category` parameter (`has_parameter_privilege('dbroles.category', 'SET') = true`).
   - To grant this privilege to the `dbroles` admin account, run as a superuser:
@@ -242,6 +250,10 @@ The application determines which actions and settings are visible based on the p
   1. The connected account has `SET` privilege on `dbroles.category`.
   2. The **Show Category Edit** setting is enabled in App Settings.
   3. The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
+
+### 7. Attribute Assignment & Superuser Safety Rules
+- **No Superuser Connections**: Superusers are prohibited from connecting with this application. On connection, if `current_setting('is_superuser') = 'on'` is detected, the application blocks regular operation with a warning (*"Superuser connection detected. Please setup a Role Admin."*) and directs the user to connection settings.
+- **Ceiling on Role Attributes**: In PostgreSQL, a non-superuser with `CREATEROLE` can **only** assign attributes (`CREATEROLE`, `CREATEDB`, `REPLICATION`, `BYPASSRLS`) to new or duplicated roles if they **themselves** possess that exact attribute. Non-superusers can **never** assign `SUPERUSER`.
 
 
 ---

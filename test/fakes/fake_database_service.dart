@@ -175,6 +175,12 @@ class FakeDatabaseService extends DatabaseService {
   }
 
   @override
+  Future<PgRole?> fetchCurrentUserRole({bool forceRefresh = false}) async {
+    final allRoles = await fetchAllRoles(forceRefresh: forceRefresh);
+    return allRoles.where((r) => r.isCurrent || r.name == username).firstOrNull;
+  }
+
+  @override
   Future<PgRole?> fetchRoleByName(String name, {bool fromCache = true}) async {
     try {
       return mockRoles.firstWhere((r) => r.name == name);

@@ -20,6 +20,7 @@ class RoleMembershipPage extends StatefulWidget {
   final bool isDeletable;
   final Function(PgRole) onDeletePressed;
   final Future<PgRole?> Function(PgRole)? onEditPressed;
+  final Future<PgRole?> Function(PgRole, List<PgUserGroup>)? onDuplicatePressed;
   final DatabaseService? dbService;
   final Future<void> Function()? onRefresh;
 
@@ -38,6 +39,7 @@ class RoleMembershipPage extends StatefulWidget {
     required this.isDeletable,
     required this.onDeletePressed,
     this.onEditPressed,
+    this.onDuplicatePressed,
     this.dbService,
     this.onRefresh,
   });
@@ -192,6 +194,14 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
     }
   }
 
+  Future<void> _handleDuplicateUser() async {
+    if (widget.onDuplicatePressed == null) return;
+    final newUser = await widget.onDuplicatePressed!(_currentUser, _currentGroups);
+    if (newUser != null && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -205,6 +215,12 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit User',
               onPressed: _handleEditUser,
+            ),
+          if (widget.onDuplicatePressed != null)
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: 'Duplicate User',
+              onPressed: _handleDuplicateUser,
             ),
           if (widget.isDeletable)
             IconButton(

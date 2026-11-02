@@ -3,16 +3,21 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/pg_role.dart';
+import '../models/pg_user_group.dart';
 import '../services/database_service.dart';
 
 class CreateUserDialog extends StatefulWidget {
   final DatabaseService dbService;
   final PgRole? initialUser;
+  final bool isDuplicate;
+  final List<PgUserGroup>? rolesToCopy;
 
   const CreateUserDialog({
     super.key,
     required this.dbService,
     this.initialUser,
+    this.isDuplicate = false,
+    this.rolesToCopy,
   });
 
   @override
@@ -29,19 +34,31 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
   DateTime? _validUntil;
   bool _obscurePassword = true;
   bool _isSaving = false;
+  Set<String> _selectedRolesToCopy = {};
 
-  bool get _isEditMode => widget.initialUser != null;
+  bool get _isDuplicateMode => widget.isDuplicate;
+  bool get _isEditMode => widget.initialUser != null && !_isDuplicateMode;
 
   @override
   void initState() {
     super.initState();
     final initialUser = widget.initialUser;
-    _nameController = TextEditingController(text: initialUser?.name ?? '');
+    final defaultName = _isDuplicateMode && initialUser != null
+        ? '${initialUser.name}_copy'
+        : (initialUser?.name ?? '');
+    _nameController = TextEditingController(text: defaultName);
     _descController = TextEditingController(text: initialUser?.description ?? '');
     _validUntil = initialUser?.validUntil;
     _validUntilController = TextEditingController(
       text: _validUntil != null ? PgRole.formatDate(_validUntil!) : '',
     );
+
+    if (_isDuplicateMode && widget.rolesToCopy != null) {
+      _selectedRolesToCopy = widget.rolesToCopy!
+          .where((g) => g.granted && g.grantable)
+          .map((g) => g.name)
+          .toSet();
+    }
   }
 
   @override
@@ -275,6 +292,35 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
           password: _passController.text,
           validUntil: _validUntil,
         );
+      } else if (_isDuplicateMode && widget.initialUser != null) {
+        final initial = widget.initialUser!;
+        final currentUser = await widget.dbService.fetchCurrentUserRole();
+        final canCreateRole = currentUser?.isSuperuser == true || currentUser?.createRole == true;
+        final canCreateDb = currentUser?.isSuperuser == true || currentUser?.createDb == true;
+        final canReplicate = currentUser?.isSuperuser == true || currentUser?.replication == true;
+        final canBypassRls = currentUser?.isSuperuser == true || currentUser?.bypassRls == true;
+
+        savedRole = await widget.dbService.createRole(
+          name: _nameController.text.trim(),
+          description: _descController.text.trim(),
+          password: _passController.text,
+          validUntil: _validUntil,
+          isSuper: false,
+          inherit: initial.inherit,
+          createRole: initial.createRole && canCreateRole,
+          createDb: initial.createDb && canCreateDb,
+          canLogin: true,
+          replication: initial.replication && canReplicate,
+          bypassRls: initial.bypassRls && canBypassRls,
+        );
+
+        for (final roleName in _selectedRolesToCopy) {
+          try {
+            await widget.dbService.grantRole(savedRole.name, roleName, userOid: savedRole.oid);
+          } catch (_) {
+            // Ignore individual role grant failures to allow remaining grants to succeed
+          }
+        }
       } else {
         savedRole = await widget.dbService.createRole(
           name: _nameController.text.trim(),
@@ -294,8 +340,9 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
     } catch (e) {
       if (mounted) {
         setState(() => _isSaving = false);
+        final action = _isDuplicateMode ? 'duplicate' : (_isEditMode ? 'update' : 'create');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to ${_isEditMode ? 'update' : 'create'} user: $e')),
+          SnackBar(content: Text('Failed to $action user: $e')),
         );
       }
     }
@@ -308,9 +355,21 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
     return AlertDialog(
       title: Row(
         children: [
-          Icon(_isEditMode ? Icons.edit : Icons.person_add, color: theme.colorScheme.primary),
+          Icon(
+            _isDuplicateMode
+                ? Icons.copy_rounded
+                : (_isEditMode ? Icons.edit : Icons.person_add),
+            color: theme.colorScheme.primary,
+          ),
           const SizedBox(width: 12),
-          Text(_isEditMode ? 'Edit User' : 'New User'),
+          Expanded(
+            child: Text(
+              _isDuplicateMode
+                  ? 'Duplicate User'
+                  : (_isEditMode ? 'Edit User' : 'New User'),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
       content: SizedBox(
@@ -323,9 +382,11 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  _isEditMode
-                      ? 'Update user attributes and settings.'
-                      : 'Create a new user with login attribute.',
+                  _isDuplicateMode
+                      ? 'Duplicate user attributes and assigned roles from "${widget.initialUser?.name}".'
+                      : (_isEditMode
+                          ? 'Update user attributes and settings.'
+                          : 'Create a new user with login attribute.'),
                   style: const TextStyle(fontSize: 13, color: Colors.grey),
                 ),
                 const SizedBox(height: 24),
@@ -344,7 +405,9 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                   obscureText: _obscurePassword,
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    hintText: _isEditMode ? 'Leave blank to keep current password' : null,
+                    hintText: _isEditMode
+                        ? 'Leave blank to keep current password'
+                        : (_isDuplicateMode ? 'Set password for new user' : null),
                     border: const OutlineInputBorder(),
                     suffixIcon: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -395,11 +458,54 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                if (_isDuplicateMode && widget.rolesToCopy != null && widget.rolesToCopy!.any((g) => g.granted)) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Copy Assigned Roles',
+                    style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 6.0,
+                    children: widget.rolesToCopy!.where((g) => g.granted).map((role) {
+                      final canGrant = role.grantable;
+                      return FilterChip(
+                        label: Text(role.name),
+                        selected: _selectedRolesToCopy.contains(role.name),
+                        onSelected: canGrant && !_isSaving
+                            ? (selected) {
+                                setState(() {
+                                  if (selected) {
+                                    _selectedRolesToCopy.add(role.name);
+                                  } else {
+                                    _selectedRolesToCopy.remove(role.name);
+                                  }
+                                });
+                              }
+                            : null,
+                        tooltip: canGrant ? null : 'Cannot grant: missing admin option on this role',
+                      );
+                    }).toList(),
+                  ),
+                ],
                 const SizedBox(height: 16),
-                OutlinedButton.icon(
+                OutlinedButton(
                   onPressed: _isSaving ? null : _copyOnboardingCredentials,
-                  icon: const Icon(Icons.copy, size: 18),
-                  label: const Text('Copy Onboarding Credentials'),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.copy, size: 18),
+                      SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'Copy Onboarding Credentials',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 8),
               ],
@@ -417,7 +523,11 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
           icon: _isSaving 
             ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) 
             : const Icon(Icons.check),
-          label: Text(_isEditMode ? 'Save Changes' : 'Create User'),
+          label: Text(
+            _isDuplicateMode
+                ? 'Duplicate User'
+                : (_isEditMode ? 'Save Changes' : 'Create User'),
+          ),
           style: ElevatedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           ),

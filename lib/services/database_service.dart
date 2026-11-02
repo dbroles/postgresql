@@ -262,6 +262,11 @@ class DatabaseService {
     return _cachedRoles!;
   }
 
+  Future<PgRole?> fetchCurrentUserRole({bool forceRefresh = false}) async {
+    final allRoles = await fetchAllRoles(forceRefresh: forceRefresh);
+    return allRoles.where((r) => r.isCurrent || r.name == username).firstOrNull;
+  }
+
   Future<PgRole?> fetchRoleByName(String name, {bool fromCache = true}) async {
     if (fromCache && _cachedRoles != null) {
       try {

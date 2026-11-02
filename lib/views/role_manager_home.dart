@@ -411,6 +411,55 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     return updatedUser;
   }
 
+  Future<PgRole?> _handleDuplicateUser(PgRole user, [List<PgUserGroup>? groups]) async {
+    List<PgUserGroup> groupsToCopy = groups ?? [];
+    if (groupsToCopy.isEmpty) {
+      if (_selectedUser?.oid == user.oid && _selectedUserGroups.isNotEmpty) {
+        groupsToCopy = _selectedUserGroups;
+      } else {
+        try {
+          groupsToCopy = await _dbService.fetchGroupsForUser(user.oid);
+        } catch (_) {}
+      }
+    }
+
+    if (!mounted) return null;
+
+    final newUser = await showDialog<PgRole>(
+      context: context,
+      builder: (context) => CreateUserDialog(
+        dbService: _dbService,
+        initialUser: user,
+        isDuplicate: true,
+        rolesToCopy: groupsToCopy,
+      ),
+    );
+
+    if (newUser != null && mounted) {
+      setState(() {
+        _users.add(newUser);
+        _users.sort(_compareUsers);
+        _selectedUser = newUser;
+      });
+
+      try {
+        final newGroups = await _dbService.fetchGroupsForUser(newUser.oid);
+        if (mounted && _selectedUser?.oid == newUser.oid) {
+          setState(() {
+            _selectedUserGroups = newGroups;
+          });
+        }
+      } catch (_) {}
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('User "${newUser.name}" duplicated from "${user.name}".')),
+        );
+      }
+    }
+    return newUser;
+  }
+
   Future<void> _selectUser(PgRole user, bool isNarrow) async {
     setState(() {
       _selectedUser = user;
@@ -444,6 +493,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               isDeletable: _isUserDeletable(user),
               onDeletePressed: _handleDeleteUser,
               onEditPressed: _canCreateRole ? _handleEditUser : null,
+              onDuplicatePressed: _canCreateRole ? _handleDuplicateUser : null,
               dbService: _dbService,
               onRefresh: _refreshRolesData,
             ),
@@ -804,6 +854,12 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               icon: const Icon(Icons.edit_outlined),
               tooltip: 'Edit User',
               onPressed: () => _handleEditUser(_selectedUser!),
+            ),
+          if (_selectedUser != null && _canCreateRole && !isNarrow)
+            IconButton(
+              icon: const Icon(Icons.copy_outlined),
+              tooltip: 'Duplicate User',
+              onPressed: () => _handleDuplicateUser(_selectedUser!),
             ),
           if (_selectedUser != null && _isUserDeletable(_selectedUser!) && !isNarrow)
             IconButton(

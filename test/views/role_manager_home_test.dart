@@ -1721,6 +1721,223 @@ void main() {
       expect(find.text('Edit User'), findsOneWidget);
     });
   });
+
+  group('Duplicate User Action (AppBar, Desktop & Mobile)', () {
+    testWidgets('CreateUserDialog in duplicate mode pre-fills values, shows roles, and grants on duplicate', (tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: [
+          PgRole(
+            oid: 1,
+            name: 'test_user',
+            canLogin: true,
+            isCurrent: true,
+            createRole: true,
+            createDb: false,
+            replication: false,
+            bypassRls: false,
+          ),
+        ],
+      );
+
+      final sourceUser = PgRole(
+        oid: 101,
+        name: 'alice',
+        description: 'Developer Account',
+        canLogin: true,
+        inherit: true,
+        createRole: true,
+        createDb: true,
+        replication: true,
+        bypassRls: true,
+        validUntil: DateTime(2027, 1, 1),
+      );
+
+      final groups = [
+        PgUserGroup(
+          oid: 201,
+          name: 'developers',
+          description: 'Dev role',
+          grantors: [],
+          grantable: true,
+          granted: true,
+        ),
+        PgUserGroup(
+          oid: 202,
+          name: 'managers',
+          description: 'Management role',
+          grantors: [],
+          grantable: false,
+          granted: true,
+        ),
+        PgUserGroup(
+          oid: 203,
+          name: 'qa',
+          description: 'QA role',
+          grantors: [],
+          grantable: true,
+          granted: false,
+        ),
+      ];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateUserDialog(
+              dbService: fakeDb,
+              initialUser: sourceUser,
+              isDuplicate: true,
+              rolesToCopy: groups,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Duplicate User'), findsWidgets);
+      expect(find.text('alice_copy'), findsOneWidget);
+      expect(find.text('Developer Account'), findsOneWidget);
+      expect(find.text('2027-01-01'), findsOneWidget);
+
+      // Only granted roles appear in "Copy Assigned Roles" (developers & managers, but not qa)
+      expect(find.text('Copy Assigned Roles'), findsOneWidget);
+      expect(find.text('developers'), findsOneWidget);
+      expect(find.text('managers'), findsOneWidget);
+      expect(find.text('qa'), findsNothing);
+
+      // Tap Duplicate User button
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Duplicate User'));
+      await tester.pumpAndSettle();
+
+      final newRole = fakeDb.mockRoles.firstWhere((r) => r.name == 'alice_copy');
+      expect(newRole.name, 'alice_copy');
+      expect(newRole.description, 'Developer Account');
+      expect(newRole.isSuperuser, isFalse);
+      expect(newRole.createRole, isTrue); // Connected user has createRole
+      expect(newRole.createDb, isFalse); // Connected user lacks createDb -> not copied
+      expect(newRole.replication, isFalse); // Connected user lacks replication -> not copied
+      expect(newRole.bypassRls, isFalse); // Connected user lacks bypassRls -> not copied
+      // developers was grantable and selected, so grantRole was called
+      expect(fakeDb.grantedRoles.contains('alice_copy:developers'), isTrue);
+    });
+
+    testWidgets('desktop: Duplicate User button is visible when user is selected and CREATEROLE is true', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially no user selected -> no Duplicate User button
+      expect(find.byTooltip('Duplicate User'), findsNothing);
+
+      // Select alice -> Duplicate User button is visible
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+      final duplicateBtn = find.byTooltip('Duplicate User');
+      expect(duplicateBtn, findsOneWidget);
+
+      // Tap Duplicate User
+      await tester.tap(duplicateBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Duplicate User'), findsWidgets);
+      expect(find.text('alice_copy'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Duplicate User'));
+      await tester.pumpAndSettle();
+
+      // Newly duplicated user is selected and added
+      expect(find.text('User Manager - alice_copy'), findsOneWidget);
+      expect(find.text('alice_copy'), findsWidgets);
+    });
+
+    testWidgets('desktop: Duplicate User button is hidden when connected user lacks CREATEROLE', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: false,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('Duplicate User'), findsNothing);
+    });
+
+    testWidgets('mobile: Duplicate User button is visible on RoleMembershipPage and duplicates user', (tester) async {
+      SharedPreferences.setMockInitialValues({
+        'db_host': 'localhost',
+        'db_port': 5432,
+        'db_user': 'test_admin',
+        'db_pass': '',
+        'showUsersWithoutAdminOption': true,
+      });
+
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      final duplicateBtn = find.byTooltip('Duplicate User');
+      expect(duplicateBtn, findsOneWidget);
+
+      await tester.tap(duplicateBtn);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Duplicate User'), findsWidgets);
+      expect(find.text('alice_copy'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Duplicate User'));
+      await tester.pumpAndSettle();
+
+      // Returns to list and shows new user
+      expect(find.text('alice_copy'), findsOneWidget);
+    });
+  });
 }
 
 
