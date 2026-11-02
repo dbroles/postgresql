@@ -496,7 +496,7 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                       SizedBox(width: 8),
                       Flexible(
                         child: Text(
-                          'Copy Onboarding Credentials',
+                          'Copy Credentials',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

@@ -853,20 +853,20 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
             },
           ),
           SwitchListTile(
+            title: const Text('Show Users Without Admin'),
+            subtitle: const Text('Include users for which for which we do not have ADMIN OPTION'),
+            value: _showUsersWithoutAdminOption,
+            onChanged: (value) {
+              _saveUsersWithoutAdminOptionSetting(value);
+              setModalState(() {});
+            },
+          ),
+          SwitchListTile(
             title: const Text('Show Ungrantable Roles'),
             subtitle: const Text('Include roles that cannot be granted due to missing permissions'),
             value: _showUngrantableRoles,
             onChanged: (value) {
               _saveUngrantableRolesSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show Users Without Admin Option'),
-            subtitle: const Text('Include users for which the connected user does not have ADMIN OPTION'),
-            value: _showUsersWithoutAdminOption,
-            onChanged: (value) {
-              _saveUsersWithoutAdminOptionSetting(value);
               setModalState(() {});
             },
           ),

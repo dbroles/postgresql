@@ -401,7 +401,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Verify the switch tile exists and is initially OFF
-      final switchFinder = find.widgetWithText(SwitchListTile, 'Show Users Without Admin Option');
+      final switchFinder = find.widgetWithText(SwitchListTile, 'Show Users Without Admin');
       expect(switchFinder, findsOneWidget);
       SwitchListTile switchWidget = tester.widget<SwitchListTile>(switchFinder);
       expect(switchWidget.value, isFalse);
@@ -430,7 +430,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.widgetWithText(SwitchListTile, 'Show Users Without Admin Option'));
+      await tester.tap(find.widgetWithText(SwitchListTile, 'Show Users Without Admin'));
       await tester.pumpAndSettle();
       expect(prefs.getBool('showUsersWithoutAdminOption'), isFalse);
 
@@ -1510,7 +1510,7 @@ void main() {
       expect(created.isValid, isFalse);
     });
 
-    testWidgets('Password generator populates strong password and Copy Onboarding Credentials copies formatted summary and URI', (tester) async {
+    testWidgets('Password generator populates strong password and Copy Credentials copies formatted summary and URI', (tester) async {
       String? copiedText;
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
         SystemChannels.platform,
@@ -1566,8 +1566,8 @@ void main() {
       await tester.tap(find.widgetWithText(ChoiceChip, '+30'));
       await tester.pumpAndSettle();
 
-      // Tap Copy Onboarding Credentials
-      final copyBtn = find.text('Copy Onboarding Credentials');
+      // Tap Copy Credentials
+      final copyBtn = find.text('Copy Credentials');
       expect(copyBtn, findsOneWidget);
       await tester.ensureVisible(copyBtn);
       await tester.pumpAndSettle();
