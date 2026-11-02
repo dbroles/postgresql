@@ -32,7 +32,6 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
   late final TextEditingController _validUntilController;
 
   DateTime? _validUntil;
-  bool _obscurePassword = true;
   bool _isSaving = false;
   Set<String> _selectedRolesToCopy = {};
 
@@ -102,7 +101,6 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
     final generated = generateStrongPassword();
     setState(() {
       _passController.text = generated;
-      _obscurePassword = false;
     });
   }
 
@@ -411,27 +409,17 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _passController,
-                  obscureText: _obscurePassword,
+                  obscureText: false,
                   decoration: InputDecoration(
                     labelText: 'Password',
                     hintText: _isEditMode
                         ? 'Leave blank to keep current password'
                         : (_isDuplicateMode ? 'Set password for new user' : null),
                     border: const OutlineInputBorder(),
-                    suffixIcon: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.casino_outlined),
-                          tooltip: 'Generate password',
-                          onPressed: _generatePassword,
-                        ),
-                        IconButton(
-                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
-                          tooltip: _obscurePassword ? 'Show password' : 'Hide password',
-                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                        ),
-                      ],
+                    suffixIcon: IconButton(
+                      icon: const Icon(Icons.casino_outlined),
+                      tooltip: 'Generate password',
+                      onPressed: _generatePassword,
                     ),
                   ),
                 ),
