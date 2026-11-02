@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
-import 'edit_role_category_dialog.dart';
 
 enum RoleFilterSegment { all, assigned, available }
 
@@ -20,6 +19,7 @@ class RoleManagementWidget extends StatefulWidget {
   final String currentUsername;
   final FocusNode? roleSearchFocusNode;
   final Future<void> Function()? onRefresh;
+  final List<String> categoryTemplates;
 
   const RoleManagementWidget({
     super.key,
@@ -27,6 +27,7 @@ class RoleManagementWidget extends StatefulWidget {
     required this.groups,
     required this.onToggleRole,
     this.onUpdateRoleCategory,
+    this.categoryTemplates = const [],
     required this.isLoading,
     required this.roleSearchController,
     this.roleSearchFocusNode,
@@ -112,42 +113,11 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
         final matchesName = r.name.toLowerCase().contains(query);
         final matchesDescription = widget.showDescriptions &&
             (r.description?.toLowerCase().contains(query) ?? false);
-        final matchesCategory = r.category?.toLowerCase().contains(query) ?? false;
+        final matchesCategory = (r.categoryName ?? r.category)?.toLowerCase().contains(query) ?? false;
         return matchesName || matchesDescription || matchesCategory;
       });
     }
     return filtered;
-  }
-
-  List<String> _getExistingCategories() {
-    final seen = <String>{};
-    final result = <String>[];
-    for (final g in widget.groups) {
-      final cat = g.category;
-      if (cat != null && cat.isNotEmpty) {
-        final key = cat.toLowerCase();
-        if (seen.add(key)) {
-          result.add(cat);
-        }
-      }
-    }
-    return result;
-  }
-
-  Future<void> _openEditCategoryDialog(PgUserGroup group) async {
-    if (widget.onUpdateRoleCategory == null) return;
-    final newCategory = await showDialog<String>(
-      context: context,
-      builder: (context) => EditRoleCategoryDialog(
-        roleName: group.name,
-        currentCategory: group.category,
-        existingCategories: _getExistingCategories(),
-      ),
-    );
-    if (newCategory == null || !mounted) return;
-    final normalized = newCategory.trim().isEmpty ? null : newCategory.trim();
-    if (normalized == group.category) return;
-    await widget.onUpdateRoleCategory!(group, normalized);
   }
 
   List<PgUserGroup> _filterGroups() {
@@ -383,9 +353,8 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     final isToggling = _togglingRoleNames.contains(group.name);
     final isInteractive = group.grantable && !isToggling && !widget.isLoading;
     final isChecked = group.granted || (!group.grantable && group.grantors.isNotEmpty);
-    final canEditCategory = isInteractive && widget.onUpdateRoleCategory != null;
 
-    final tile = CheckboxListTile(
+    return CheckboxListTile(
       enabled: isInteractive,
       secondary: isToggling
           ? const SizedBox(
@@ -425,29 +394,6 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
                 alignment: PlaceholderAlignment.middle,
                 child: _buildGrantorBadge(context, group),
               ),
-            if (canEditCategory)
-              WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 6.0),
-                  child: IconButton(
-                    icon: Icon(
-                      group.category != null ? Icons.label : Icons.label_outline,
-                      size: 16,
-                      color: group.category != null
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-                    ),
-                    tooltip: group.category != null
-                        ? 'Category: ${group.category} (Tap to edit)'
-                        : 'Set category',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                    onPressed: () => _openEditCategoryDialog(group),
-                  ),
-                ),
-              ),
           ],
         ),
         maxLines: 1,
@@ -456,23 +402,20 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
       value: isChecked,
       onChanged: isInteractive ? (val) => _handleToggleRole(group) : null,
     );
-
-    if (!canEditCategory) return tile;
-
-    return GestureDetector(
-      onLongPress: () => _openEditCategoryDialog(group),
-      child: tile,
-    );
   }
 
   Widget _buildSectionHeader({
     required String sectionKey,
     required String title,
+    int? order,
+    Color? color,
     required int assignedCount,
     required int totalCount,
     required bool isCollapsed,
     required ThemeData theme,
   }) {
+    final headerColor = color ?? theme.colorScheme.primary;
+
     return InkWell(
       key: ValueKey('category_header_$sectionKey'),
       onTap: () => _toggleSectionCollapsed(sectionKey, isCollapsed),
@@ -481,6 +424,9 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
           border: Border(
+            left: color != null
+                ? BorderSide(color: color, width: 4.0)
+                : BorderSide.none,
             bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
           ),
         ),
@@ -489,25 +435,32 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
             Icon(
               isCollapsed ? Icons.expand_more : Icons.expand_less,
               size: 20,
-              color: theme.colorScheme.primary,
+              color: headerColor,
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.onSurface,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
               decoration: BoxDecoration(
                 color: assignedCount > 0
-                    ? theme.colorScheme.primaryContainer
+                    ? (color != null ? color.withValues(alpha: 0.15) : theme.colorScheme.primaryContainer)
                     : theme.colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -516,7 +469,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: assignedCount > 0
-                      ? theme.colorScheme.onPrimaryContainer
+                      ? (color ?? theme.colorScheme.onPrimaryContainer)
                       : theme.colorScheme.onSurfaceVariant,
                 ),
               ),
@@ -565,20 +518,25 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
       );
     }
 
-    // Build sections in single pass preserving PostgreSQL's ORDER BY LOWER(category) ASC NULLS LAST, LOWER(name) ASC
+    // Build sections in single pass preserving PostgreSQL's ORDER BY
     final sectionOrder = <String>[];
     final sectionTitles = <String, String>{};
+    final sectionColors = <String, Color?>{};
+    final sectionOrders = <String, int?>{};
     final sectionGroups = <String, List<PgUserGroup>>{};
 
     for (final group in filteredGroups) {
-      final rawCat = group.category;
-      final isUngrouped = rawCat == null || rawCat.isEmpty;
-      final key = isUngrouped ? _ungroupedSectionKey : rawCat.toLowerCase();
-      final title = isUngrouped ? 'Ungrouped' : rawCat;
+      final isUngrouped = group.category == null || group.category!.isEmpty;
+      final key = isUngrouped
+          ? _ungroupedSectionKey
+          : (group.categoryName?.toLowerCase() ?? group.category!.toLowerCase());
+      final title = isUngrouped ? 'Ungrouped' : (group.categoryName ?? group.category!);
 
       if (!sectionGroups.containsKey(key)) {
         sectionOrder.add(key);
         sectionTitles[key] = title;
+        sectionColors[key] = isUngrouped ? null : group.categoryColor;
+        sectionOrders[key] = isUngrouped ? null : group.categoryOrder;
         sectionGroups[key] = [];
       }
       sectionGroups[key]!.add(group);
@@ -594,6 +552,8 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
         _buildSectionHeader(
           sectionKey: key,
           title: sectionTitles[key]!,
+          order: sectionOrders[key],
+          color: sectionColors[key],
           assignedCount: assignedCount,
           totalCount: groupsInSection.length,
           isCollapsed: isCollapsed,

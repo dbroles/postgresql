@@ -63,19 +63,7 @@ class FakeDatabaseService extends DatabaseService {
         }
         return g;
       }).toList();
-      groups.sort((a, b) {
-        final catA = a.category?.toLowerCase();
-        final catB = b.category?.toLowerCase();
-        if (catA != null && catB != null) {
-          final cmp = catA.compareTo(catB);
-          if (cmp != 0) return cmp;
-        } else if (catA != null) {
-          return -1;
-        } else if (catB != null) {
-          return 1;
-        }
-        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-      });
+      groups.sort(_compareGroups);
       return groups;
     }
     // Default fallback: generate from mockRoles (groups) and mockMemberships
@@ -102,27 +90,54 @@ class FakeDatabaseService extends DatabaseService {
       );
     }).toList();
 
-    groups.sort((a, b) {
-      final catA = a.category?.toLowerCase();
-      final catB = b.category?.toLowerCase();
-      if (catA != null && catB != null) {
-        final cmp = catA.compareTo(catB);
-        if (cmp != 0) return cmp;
-      } else if (catA != null) {
-        return -1;
-      } else if (catB != null) {
-        return 1;
-      }
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
+    groups.sort(_compareGroups);
 
     return groups;
+  }
+
+  @override
+  Future<List<PgUserGroup>> fetchGroupCatalog({bool forceRefresh = false}) async {
+    if (mockUserGroups != null && mockUserGroups!.isNotEmpty) {
+      final firstKey = mockUserGroups!.keys.first;
+      return fetchGroupsForUser(firstKey, forceRefresh: forceRefresh);
+    }
+    return fetchGroupsForUser(0, forceRefresh: forceRefresh);
+  }
+
+  static int _compareGroups(PgUserGroup a, PgUserGroup b) {
+    final orderA = a.categoryOrder;
+    final orderB = b.categoryOrder;
+    if (orderA != null && orderB != null && orderA != orderB) {
+      return orderA.compareTo(orderB);
+    } else if (orderA != null && orderB == null) {
+      return -1;
+    } else if (orderA == null && orderB != null) {
+      return 1;
+    }
+    final catA = a.categoryName?.toLowerCase();
+    final catB = b.categoryName?.toLowerCase();
+    if (catA != null && catB != null) {
+      final cmp = catA.compareTo(catB);
+      if (cmp != 0) return cmp;
+    } else if (catA != null) {
+      return -1;
+    } else if (catB != null) {
+      return 1;
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }
 
   @override
   Future<void> setRoleCategory(String roleName, String? category) async {
     final trimmed = category?.trim();
     roleCategories[roleName] = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+  }
+
+  @override
+  Future<void> updateCategoryForRoles(Iterable<String> roleNames, String? newCategory) async {
+    for (final roleName in roleNames) {
+      await setRoleCategory(roleName, newCategory);
+    }
   }
 
   @override

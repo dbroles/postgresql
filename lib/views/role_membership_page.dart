@@ -23,6 +23,7 @@ class RoleMembershipPage extends StatefulWidget {
   final Future<PgRole?> Function(PgRole, List<PgUserGroup>)? onDuplicatePressed;
   final DatabaseService? dbService;
   final Future<void> Function()? onRefresh;
+  final List<String> categoryTemplates;
 
   const RoleMembershipPage({
     super.key,
@@ -30,6 +31,7 @@ class RoleMembershipPage extends StatefulWidget {
     required this.groups,
     required this.onToggleRole,
     this.onUpdateRoleCategory,
+    this.categoryTemplates = const [],
     required this.roleSearchController,
     required this.showSystemRoles,
     this.showUngrantableRoles = false,
@@ -244,6 +246,7 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
           groups: _currentGroups,
           onToggleRole: _handleToggle,
           onUpdateRoleCategory: widget.onUpdateRoleCategory != null ? _handleUpdateRoleCategory : null,
+          categoryTemplates: widget.categoryTemplates,
           isLoading: false,
           roleSearchController: widget.roleSearchController,
           roleSearchFocusNode: _roleSearchFocusNode,

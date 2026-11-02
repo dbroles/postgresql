@@ -163,20 +163,29 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
       (label: '+365', date: DateTime(today.year, today.month, today.day + 365)),
     ];
 
-    return Wrap(
-      spacing: 8.0,
-      runSpacing: 6.0,
-      children: presets.map((preset) {
-        final isSelected = _validUntil != null &&
-            _validUntil!.year == preset.date.year &&
-            _validUntil!.month == preset.date.month &&
-            _validUntil!.day == preset.date.day;
-        return ChoiceChip(
-          label: Text(preset.label),
-          selected: isSelected,
-          onSelected: _isSaving ? null : (_) => _setValidUntil(preset.date),
-        );
-      }).toList(),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: presets.map((preset) {
+          final isSelected = _validUntil != null &&
+              _validUntil!.year == preset.date.year &&
+              _validUntil!.month == preset.date.month &&
+              _validUntil!.day == preset.date.day;
+          return Padding(
+            padding: const EdgeInsets.only(right: 6.0),
+            child: ChoiceChip(
+              label: Text(preset.label, style: const TextStyle(fontSize: 12)),
+              selected: isSelected,
+              showCheckmark: false,
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: EdgeInsets.zero,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+              onSelected: _isSaving ? null : (_) => _setValidUntil(preset.date),
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 

@@ -1465,11 +1465,19 @@ void main() {
       final plus90 = DateTime(today.year, today.month, today.day + 90);
       final plus365 = DateTime(today.year, today.month, today.day + 365);
 
-      // Verify all 4 chips exist
+      // Verify all 4 chips exist and are aligned on a single row
       expect(find.widgetWithText(ChoiceChip, 'Expire Now'), findsOneWidget);
       expect(find.widgetWithText(ChoiceChip, '+30'), findsOneWidget);
       expect(find.widgetWithText(ChoiceChip, '+90'), findsOneWidget);
       expect(find.widgetWithText(ChoiceChip, '+365'), findsOneWidget);
+
+      final expireNowTop = tester.getTopLeft(find.widgetWithText(ChoiceChip, 'Expire Now')).dy;
+      final plus30Top = tester.getTopLeft(find.widgetWithText(ChoiceChip, '+30')).dy;
+      final plus90Top = tester.getTopLeft(find.widgetWithText(ChoiceChip, '+90')).dy;
+      final plus365Top = tester.getTopLeft(find.widgetWithText(ChoiceChip, '+365')).dy;
+      expect(expireNowTop, equals(plus30Top));
+      expect(plus30Top, equals(plus90Top));
+      expect(plus90Top, equals(plus365Top));
 
       // Tap +30
       await tester.tap(find.widgetWithText(ChoiceChip, '+30'));

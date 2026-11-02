@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 class PgUserGroup {
   final int oid;
   final String name;
@@ -16,6 +18,67 @@ class PgUserGroup {
     required this.granted,
     this.category,
   });
+
+  /// Extracts the human-readable category name from format "name[:order[:color]]"
+  String? get categoryName {
+    if (category == null || category!.isEmpty) return null;
+    final parts = category!.split(':');
+    final name = parts[0].trim();
+    return name.isNotEmpty ? name : null;
+  }
+
+  /// Extracts the numeric sort order if present
+  int? get categoryOrder {
+    if (category == null || category!.isEmpty) return null;
+    final parts = category!.split(':');
+    if (parts.length > 1) {
+      return int.tryParse(parts[1].trim());
+    }
+    return null;
+  }
+
+  /// Extracts the 6-character hex color string (without '#') if present
+  String? get categoryColorHex {
+    if (category == null || category!.isEmpty) return null;
+    final parts = category!.split(':');
+    if (parts.length > 2) {
+      var hex = parts[2].trim();
+      if (hex.startsWith('#')) hex = hex.substring(1);
+      return hex.isNotEmpty ? hex : null;
+    }
+    return null;
+  }
+
+  /// Parses the color hex into a [Color], or null if invalid/not provided
+  Color? get categoryColor {
+    final hex = categoryColorHex;
+    if (hex == null) return null;
+    final cleanHex = hex.length == 6 ? 'FF$hex' : hex;
+    final val = int.tryParse(cleanHex, radix: 16);
+    if (val != null) {
+      return Color(val);
+    }
+    return null;
+  }
+
+  /// Formats category components into "name[:order[:color]]" string
+  static String formatCategory({
+    required String name,
+    int? order,
+    String? colorHex,
+  }) {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return '';
+    final trimmedColor = colorHex?.trim().replaceAll('#', '') ?? '';
+    if (order != null || trimmedColor.isNotEmpty) {
+      final orderPart = order != null ? order.toString() : '';
+      if (trimmedColor.isNotEmpty) {
+        return '$trimmedName:$orderPart:$trimmedColor';
+      }
+      return '$trimmedName:$orderPart';
+    }
+    return trimmedName;
+  }
 
   factory PgUserGroup.fromRow(List<dynamic> row) {
     final rawGrantors = row[3];

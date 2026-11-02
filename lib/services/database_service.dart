@@ -402,13 +402,36 @@ class DatabaseService {
       WHERE NOT g.rolcanlogin
       GROUP BY g.oid, g.rolname, g.rolconfig
       ORDER BY
+          (CASE 
+              WHEN split_part(
+                  NULLIF(btrim((
+                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+                      FROM unnest(g.rolconfig) AS cfg
+                      WHERE cfg LIKE 'dbroles.category=%'
+                      LIMIT 1
+                  )), ''),
+                  ':', 2
+              ) ~ '^[0-9]+$'
+              THEN split_part(
+                  NULLIF(btrim((
+                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+                      FROM unnest(g.rolconfig) AS cfg
+                      WHERE cfg LIKE 'dbroles.category=%'
+                      LIMIT 1
+                  )), ''),
+                  ':', 2
+              )::int
+          END) ASC NULLS LAST,
           LOWER(NULLIF(
-              btrim((
-                  SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                  FROM unnest(g.rolconfig) AS cfg
-                  WHERE cfg LIKE 'dbroles.category=%'
-                  LIMIT 1
-              )),
+              split_part(
+                  btrim((
+                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+                      FROM unnest(g.rolconfig) AS cfg
+                      WHERE cfg LIKE 'dbroles.category=%'
+                      LIMIT 1
+                  )),
+                  ':', 1
+              ),
               ''
           )) ASC NULLS LAST,
           LOWER(g.rolname) ASC;
@@ -480,6 +503,10 @@ class DatabaseService {
     return memberships;
   }
 
+  Future<List<PgUserGroup>> fetchGroupCatalog({bool forceRefresh = false}) async {
+    return _fetchGroupCatalog(forceRefresh: forceRefresh);
+  }
+
   Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
     final catalog = await _fetchGroupCatalog(forceRefresh: forceRefresh);
     final memberships = await _fetchUserMemberships(userOid, forceRefresh: forceRefresh);
@@ -506,6 +533,12 @@ class DatabaseService {
       );
     }
     _cachedGroupCatalog = null;
+  }
+
+  Future<void> updateCategoryForRoles(Iterable<String> roleNames, String? newCategory) async {
+    for (final roleName in roleNames) {
+      await setRoleCategory(roleName, newCategory);
+    }
   }
 
   Future<void> grantRole(String userName, String roleName, {int? userOid}) async {
