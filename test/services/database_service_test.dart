@@ -1,7 +1,59 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/services/database_service.dart';
 
 void main() {
+  group('PgRole validUntil parsing and formatting', () {
+    test('formatDate formats DateTime as YYYY-MM-DD', () {
+      expect(PgRole.formatDate(DateTime(2026, 3, 5)), '2026-03-05');
+      expect(PgRole.formatDate(DateTime(2026, 12, 31, 14, 30)), '2026-12-31');
+    });
+
+    test('fromRow parses valid_until string column into date-only DateTime', () {
+      final row = [
+        101,
+        'temp_user',
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        'Temporary contractor',
+        true,
+        true,
+        '2027-06-15',
+      ];
+      final role = PgRole.fromRow(row);
+      expect(role.validUntil, DateTime(2027, 6, 15));
+      expect(role.validUntilDateString, '2027-06-15');
+    });
+
+    test('fromRow handles null valid_until column', () {
+      final row = [
+        102,
+        'perm_user',
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        null,
+        true,
+        true,
+        null,
+      ];
+      final role = PgRole.fromRow(row);
+      expect(role.validUntil, isNull);
+      expect(role.validUntilDateString, isNull);
+    });
+  });
+
   group('DatabaseService SQL Escaping Utilities', () {
     group('escapeIdentifier', () {
       test('correctly quotes simple identifier', () {

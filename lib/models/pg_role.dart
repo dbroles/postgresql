@@ -12,7 +12,29 @@ class PgRole {
   final String? description;
   final bool isAdmin;
   final bool canDrop;
+  final DateTime? validUntil;
+  final bool isValid;
   bool get canManage => isAdmin;
+
+  /// Formats a [DateTime] as an ISO date string ('YYYY-MM-DD').
+  static String formatDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  /// Returns [validUntil] formatted as 'YYYY-MM-DD', or null if not set.
+  String? get validUntilDateString =>
+      validUntil != null ? formatDate(validUntil!) : null;
+
+  static bool _defaultIsValid(DateTime? validUntil) {
+    if (validUntil == null) return true;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final target = DateTime(validUntil.year, validUntil.month, validUntil.day);
+    return !target.isBefore(today);
+  }
 
   PgRole({
     required this.oid,
@@ -29,7 +51,27 @@ class PgRole {
     bool isAdmin = false,
     this.canDrop = false,
     bool? canManage,
-  })  : isAdmin = canManage ?? isAdmin;
+    DateTime? validUntil,
+    bool? isValid,
+  })  : isAdmin = canManage ?? isAdmin,
+        validUntil = validUntil != null
+            ? DateTime(validUntil.year, validUntil.month, validUntil.day)
+            : null,
+        isValid = isValid ?? _defaultIsValid(validUntil);
+
+  static DateTime? _parseValidUntil(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) {
+      return DateTime(raw.year, raw.month, raw.day);
+    }
+    if (raw is String && raw.isNotEmpty) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) {
+        return DateTime(parsed.year, parsed.month, parsed.day);
+      }
+    }
+    return null;
+  }
 
   factory PgRole.fromRow(List<dynamic> row) {
     final bool isAdmin;
@@ -41,6 +83,10 @@ class PgRole {
       canDrop = (row[11] as bool?) ?? false;
       isAdmin = canDrop;
     }
+    final DateTime? validUntil =
+        row.length > 13 ? _parseValidUntil(row[13]) : null;
+    final bool? isValid =
+        row.length > 14 ? (row[14] as bool?) : null;
     return PgRole(
       oid: row[0] as int,
       name: row[1] as String,
@@ -55,6 +101,8 @@ class PgRole {
       description: row[10] as String?,
       isAdmin: isAdmin,
       canDrop: canDrop,
+      validUntil: validUntil,
+      isValid: isValid,
     );
   }
 

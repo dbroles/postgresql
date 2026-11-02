@@ -216,6 +216,7 @@ class FakeDatabaseService extends DatabaseService {
     required String name,
     String? description,
     String? password,
+    DateTime? validUntil,
     bool isSuper = false,
     bool inherit = true,
     bool createRole = false,
@@ -237,9 +238,46 @@ class FakeDatabaseService extends DatabaseService {
       bypassRls: bypassRls,
       canManage: true,
       canDrop: true,
+      validUntil: validUntil,
     );
     mockRoles.add(newRole);
     return newRole;
+  }
+
+  @override
+  Future<PgRole> updateRole({
+    required String oldName,
+    required String name,
+    String? description,
+    String? password,
+    DateTime? validUntil,
+  }) async {
+    final index = mockRoles.indexWhere((r) => r.name == oldName);
+    final existing = index != -1 ? mockRoles[index] : null;
+    final updated = PgRole(
+      oid: existing?.oid ?? (mockRoles.length + 1000),
+      name: name,
+      canLogin: existing?.canLogin ?? true,
+      isSuperuser: existing?.isSuperuser ?? false,
+      description: (description != null && description.trim().isNotEmpty)
+          ? description.trim()
+          : null,
+      inherit: existing?.inherit ?? true,
+      createRole: existing?.createRole ?? false,
+      createDb: existing?.createDb ?? false,
+      replication: existing?.replication ?? false,
+      bypassRls: existing?.bypassRls ?? false,
+      isCurrent: existing?.isCurrent ?? false,
+      isAdmin: existing?.isAdmin ?? true,
+      canDrop: existing?.canDrop ?? true,
+      validUntil: validUntil,
+    );
+    if (index != -1) {
+      mockRoles[index] = updated;
+    } else {
+      mockRoles.add(updated);
+    }
+    return updated;
   }
 
   @override

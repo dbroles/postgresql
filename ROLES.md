@@ -1,10 +1,10 @@
-## Users, Groups and Roles
+## Users and Roles
 ```
 Although technically correct, the explanation below is an oversimplification of the reality of PostgreSQL roles.
 More information can be found here: https://www.postgresql.org/docs/current/user-manag.html
 ```
 
-PostgreSQL does not have **users** or **groups**.  
+PostgreSQL does not have separate **users** or **groups** at the catalog level.  
 Instead, it uses the concept of **roles**, which have attributes and privileges and can be granted to other roles.
 
 PostgreSQL prevents circular inheritance of roles. If role A inherits role B, and role B inherits role A, then PostgreSQL will throw an error.
@@ -27,16 +27,16 @@ When a user is selected on the left side of the screen, his attributes are shown
 ![Login Attributes](assets/attributes.png)  
 Of course green means set and grey means not set.
 
-The `Login` attribute determines if a role can log in to the database.  This is the difference between a "user" and a "group":
-- If `Login` is true, it is a **user** and appears on the **left**
-- If `Login` is false, it is a **group** and appears on the **right**
+The `Login` attribute determines if a role can log in to the database. This defines the distinction in this application:
+- If `Login` is true, it is a **User** and appears on the **left**
+- If `Login` is false, it is a **Role** and appears on the **right**
 
-From here on, I will use the words `user` and `group` depending on whether the role has the **Login** attribute set to true or false.
+Throughout the application and documentation, objects on the left (`rolcanlogin = true`) are **Users**, and objects on the right (`rolcanlogin = false`) are **Roles**.
 
-Attributes are **not** inherited by child roles. If a group called `DBAs` has the Superuser attribute set to **true**, members of that group are **not** superusers. If the `SET` option is true they can become Superuser however, see the section on [Granting](Granting).
+Attributes are **not** inherited by child roles. If a role called `DBAs` has the Superuser attribute set to **true**, members of that role are **not** superusers. If the `SET` option is true they can become Superuser however, see the section on [Granting](Granting).
 
-Roles can have constraints by setting a CONNECTION LIMIT or a VALID UNTIL attribute.  
-Roles can have security labels (MAC/SELinux) by applying a SECURITY LABEL or COMMENT to the role.
+Users and roles can have constraints by setting a CONNECTION LIMIT or a VALID UNTIL attribute.  
+They can have security labels (MAC/SELinux) by applying a SECURITY LABEL or COMMENT.
 
 ### 2. Object-Level Privileges
 There are many different privileges on many different objects.  
@@ -47,11 +47,11 @@ The most important ones are:
 - DELETE
 
 These privileges **are** inherited.  
-So if a group called `hr` can SELECT, INSERT and UPDATE on table `hr.persons` then
+So if a role called `hr` can SELECT, INSERT and UPDATE on table `hr.persons` then
 any user that is a member of `hr` can also SELECT, INSERT and UPDATE on `hr.persons`.
 
-Many organizations use this feature to create a system where privileges are granted to groups and users become members of these groups.
-Thereby inheriting the privileges of the groups.
+Many organizations use this feature to create a system where privileges are granted to roles and users become members of these roles.
+Thereby inheriting the privileges of the roles.
 
 Access privileges can be **GRANT**ed and **REVOKE**d on roles for: tables (or [materialized] views), columns, sequences, databases, domains, foreign data wrappers, servers, routines, languages, large objects, configuration parameters, schemas, tablespaces, types and other roles. [*grant*](https://www.postgresql.org/docs/current/sql-grant.html) / [*revoke*](https://www.postgresql.org/docs/current/sql-revoke.html)
 
@@ -76,17 +76,17 @@ They can be permissive or restrictive.
 Objects have owners. The owner of an object has all privileges on that object.
 -->
 ## Granting
-When you grant a group to a user, for example: `grant hr to karen;`
+When you grant a role to a user, for example: `grant hr to karen;`
 You have three options:
 - ADMIN; the user will be able to grant this privilege to other users. Or drop the `hr` role altogether.
-- INHERIT; the user can SELECT, UPDATE, INSERT and DELETE any object that the `hr` group can access.
-- SET; the user can use the attributes of the `hr` group. Such as BYPASSRLS by using `set role hr`
+- INHERIT; the user can SELECT, UPDATE, INSERT and DELETE any object that the `hr` role can access.
+- SET; the user can use the attributes of the `hr` role. Such as BYPASSRLS by using `set role hr`
 
 Role attributes (SUPERUSER, INHERIT, BYPASSRLS etc.) are not inherited. They can only be obtained by switching to that role using `set role <role_name>`. This program uses the default values from PostgreSQL; ADMIN=false, INHERIT=true, SET=true.
 
 ## Extra
-If you are going to make a login a member of a role, for example: `grant hr to karen;`
-Then you must have ADMIN rights on hr. Not per se on karen.
+If you are going to make a user a member of a role, for example: `grant hr to karen;`
+Then you must have ADMIN rights on `hr`. Not per se on `karen`.
 
 The query to select the users is:
 ```sql
@@ -119,6 +119,11 @@ user_roles AS (
                   AND m.admin_option = true
             )
         ) AS is_admin,
+        CASE
+            WHEN r.rolvaliduntil IS NOT NULL AND isfinite(r.rolvaliduntil)
+            THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
+        END AS valid_until,
+        (r.rolvaliduntil IS NULL OR r.rolvaliduntil > CURRENT_TIMESTAMP) AS is_valid,
         me.is_super,
         me.can_create
     FROM pg_catalog.pg_roles r
@@ -138,35 +143,49 @@ SELECT
     is_current,
     description,
     is_admin,
-    (is_admin AND (is_super OR can_create)) AS can_drop
+    (is_admin AND (is_super OR can_create)) AS can_drop,
+    valid_until,
+    is_valid
 FROM user_roles
-ORDER BY name ASC;
+ORDER BY LOWER(name) ASC;
 ```
 
-The query to select the groups of a user is:
+The query to select the roles catalog is:
 ```sql
 SELECT 
     g.oid::int,
     g.rolname AS name,
     pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
-    COALESCE(
-        array_agg(m.grantor::regrole::text ORDER BY m.grantor::regrole::text) 
-        FILTER (WHERE m.grantor IS NOT NULL AND m.grantor <> CURRENT_USER::regrole::oid),
-        '{}'::text[]
-    ) AS grantors,
+    '{}'::text[] AS grantors,
     (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-    COALESCE(bool_or(m.grantor = CURRENT_USER::regrole::oid), false) AS granted
+    false AS granted,
+    NULLIF(
+        btrim((
+            SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+            FROM unnest(g.rolconfig) AS cfg
+            WHERE cfg LIKE 'dbroles.category=%'
+            LIMIT 1
+        )),
+        ''
+    ) AS category
 FROM pg_catalog.pg_roles g
-LEFT JOIN pg_catalog.pg_auth_members m
-    ON g.oid = m.roleid
-   AND m.member = $1::oid
 LEFT JOIN pg_catalog.pg_auth_members me
     ON g.oid = me.roleid
    AND me.member = CURRENT_USER::regrole::oid
    AND me.admin_option = true
 WHERE NOT g.rolcanlogin
-GROUP BY g.oid, g.rolname
-ORDER BY g.rolname;
+GROUP BY g.oid, g.rolname, g.rolconfig
+ORDER BY
+    LOWER(NULLIF(
+        btrim((
+            SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
+            FROM unnest(g.rolconfig) AS cfg
+            WHERE cfg LIKE 'dbroles.category=%'
+            LIMIT 1
+        )),
+        ''
+    )) ASC NULLS LAST,
+    LOWER(g.rolname) ASC;
 ```
 
 ---

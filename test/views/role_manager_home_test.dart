@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -6,6 +7,7 @@ import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/models/pg_user_group.dart';
 import 'package:user_manager/views/connection_settings_page.dart';
 import 'package:user_manager/views/connection_status_bar.dart';
+import 'package:user_manager/views/create_user_dialog.dart';
 import 'package:user_manager/views/role_manager_home.dart';
 import 'package:user_manager/views/user_list_widget.dart';
 
@@ -516,7 +518,7 @@ void main() {
     });
   });
 
-  group('Delete Role Button Visibility on Desktop', () {
+  group('Delete User Button Visibility on Desktop', () {
     testWidgets('shows delete button in AppBar on desktop when deletable user is selected', (tester) async {
       SharedPreferences.setMockInitialValues({
         'db_host': 'localhost',
@@ -550,14 +552,14 @@ void main() {
       await tester.pumpAndSettle();
 
       // Initially no user selected -> no delete button
-      expect(find.byTooltip('Delete Role'), findsNothing);
+      expect(find.byTooltip('Delete User'), findsNothing);
 
       // Select deletable user 'alice'
       await tester.tap(find.text('alice'));
       await tester.pumpAndSettle();
 
       // Delete button must be visible in AppBar on desktop
-      expect(find.byTooltip('Delete Role'), findsOneWidget);
+      expect(find.byTooltip('Delete User'), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
     });
 
@@ -598,7 +600,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Delete button must NOT be visible
-      expect(find.byTooltip('Delete Role'), findsNothing);
+      expect(find.byTooltip('Delete User'), findsNothing);
     });
 
     testWidgets('tapping delete button on desktop opens confirmation dialog', (tester) async {
@@ -638,13 +640,13 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap Delete button
-      await tester.tap(find.byTooltip('Delete Role'));
+      await tester.tap(find.byTooltip('Delete User'));
       await tester.pumpAndSettle();
 
       // Confirmation dialog should be displayed
       expect(find.byType(AlertDialog), findsOneWidget);
-      expect(find.text('Delete Role'), findsOneWidget);
-      expect(find.text('Are you sure you want to delete the role "alice"? This action cannot be undone.'), findsOneWidget);
+      expect(find.text('Delete User'), findsOneWidget);
+      expect(find.text('Are you sure you want to delete the user "alice"? This action cannot be undone.'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
     });
@@ -1324,6 +1326,205 @@ void main() {
       expect(find.text('connected_agent'), findsNothing);
       expect(find.text('Select a user to manage roles'), findsOneWidget);
       expect(find.text('User Manager'), findsOneWidget);
+    });
+  });
+
+  group('CreateUserDialog Valid Until Date Picker', () {
+    testWidgets('uses Material showDatePicker on Android/Windows/Linux, allows clearing and saving', (tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: [],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.android),
+          home: Scaffold(
+            body: CreateUserDialog(dbService: fakeDb),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Valid Until field is visible and initially empty
+      final validUntilField = find.widgetWithText(TextFormField, 'Valid Until');
+      expect(validUntilField, findsOneWidget);
+
+      // Tap Valid Until field to open Material DatePickerDialog
+      await tester.tap(validUntilField);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(DatePickerDialog), findsOneWidget);
+
+      // Confirm default date (today)
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      final now = DateTime.now();
+      final expectedToday = PgRole.formatDate(now);
+      expect(find.text(expectedToday), findsOneWidget);
+
+      // Clear button is now shown; tap it to clear the date
+      final clearButton = find.byTooltip('Clear date');
+      expect(clearButton, findsOneWidget);
+      await tester.tap(clearButton);
+      await tester.pumpAndSettle();
+      expect(find.text(expectedToday), findsNothing);
+
+      // Pick the date again and create the user
+      await tester.tap(validUntilField);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'Username'), 'dave');
+      await tester.tap(find.text('Create User'));
+      await tester.pumpAndSettle();
+
+      expect(fakeDb.mockRoles.length, 1);
+      expect(fakeDb.mockRoles.first.name, 'dave');
+      expect(fakeDb.mockRoles.first.validUntilDateString, expectedToday);
+    });
+
+    testWidgets('uses CupertinoDatePicker on macOS and iOS', (tester) async {
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: [],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(platform: TargetPlatform.macOS),
+          home: Scaffold(
+            body: CreateUserDialog(dbService: fakeDb),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final validUntilField = find.widgetWithText(TextFormField, 'Valid Until');
+      await tester.tap(validUntilField);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      expect(find.widgetWithText(CupertinoButton, 'Done'), findsOneWidget);
+      expect(find.widgetWithText(CupertinoButton, 'Cancel'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(CupertinoButton, 'Done'));
+      await tester.pumpAndSettle();
+
+      final expectedToday = PgRole.formatDate(DateTime.now());
+      expect(find.text(expectedToday), findsOneWidget);
+    });
+
+    testWidgets('pre-populates fields when initialUser is provided', (tester) async {
+      final fakeDb = FakeDatabaseService();
+      final existingUser = PgRole(
+        oid: 500,
+        name: 'contractor',
+        description: 'Temp access',
+        validUntil: DateTime(2028, 1, 15),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateUserDialog(
+              dbService: fakeDb,
+              initialUser: existingUser,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('contractor'), findsOneWidget);
+      expect(find.text('Temp access'), findsOneWidget);
+      expect(find.text('2028-01-15'), findsOneWidget);
+    });
+  });
+
+  group('Edit User Setting and Flow', () {
+    testWidgets('Show User Edit setting is only shown when running account has CREATEROLE', (tester) async {
+      final fakeDbWithoutCreateRole = FakeDatabaseService(
+        canCreateRoleResult: false,
+        roles: sampleRoles,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDbWithoutCreateRole),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(SwitchListTile, 'Show User Edit'), findsNothing);
+    });
+
+    testWidgets('Show User Edit defaults to false, toggles Edit User button in AppBar, and updates user via CreateUserDialog', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        canCreateRoleResult: true,
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Select alice
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      // Edit User button is hidden by default (showEditUserButton defaults to false)
+      expect(find.byTooltip('Edit User'), findsNothing);
+
+      // Open settings and enable Show User Edit
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+
+      final editSwitchFinder = find.widgetWithText(SwitchListTile, 'Show User Edit');
+      expect(editSwitchFinder, findsOneWidget);
+      expect(tester.widget<SwitchListTile>(editSwitchFinder).value, isFalse);
+
+      await tester.tap(editSwitchFinder);
+      await tester.pumpAndSettle();
+
+      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
+      navigator.pop();
+      await tester.pumpAndSettle();
+
+      // Edit User button is now visible in AppBar
+      final editButton = find.byTooltip('Edit User');
+      expect(editButton, findsOneWidget);
+
+      // Tap Edit User button to open CreateUserDialog in edit mode
+      await tester.tap(editButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit User'), findsOneWidget);
+      expect(find.text('Save Changes'), findsOneWidget);
+
+      // Update username and description
+      await tester.enterText(find.widgetWithText(TextFormField, 'Username'), 'alice_updated');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Description'), 'Senior Dev User');
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('User Manager - alice_updated'), findsOneWidget);
+      expect(find.text('Senior Dev User'), findsWidgets);
     });
   });
 }

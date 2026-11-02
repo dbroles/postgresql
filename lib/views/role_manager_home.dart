@@ -47,6 +47,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   bool _showFilters = false;
   bool _showConnectedUser = false;
   bool _showEditCategoryButton = false;
+  bool _showEditUserButton = false;
   String _userSearchQuery = '';
   String? _clusterName;
   bool _isSslEnabled = false;
@@ -199,6 +200,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       _showFilters = prefs.getBool('showFilters') ?? false;
       _showConnectedUser = prefs.getBool('showConnectedUser') ?? false;
       _showEditCategoryButton = prefs.getBool('showEditCategoryButton') ?? false;
+      _showEditUserButton = prefs.getBool('showEditUserButton') ?? false;
     });
     
     await _loadInitialData();
@@ -281,6 +283,14 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     });
   }
 
+  Future<void> _saveShowEditUserButtonSetting(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('showEditUserButton', value);
+    setState(() {
+      _showEditUserButton = value;
+    });
+  }
+
   Future<void> _loadInitialData() async {
     setState(() {
       _isLoading = true;
@@ -347,7 +357,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
   }
 
-  Future<void> _createNewRole() async {
+  Future<void> _createNewUser() async {
     final result = await showDialog<PgRole>(
       context: context,
       builder: (context) => CreateUserDialog(dbService: _dbService),
@@ -372,6 +382,36 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         );
       }
     }
+  }
+
+  Future<PgRole?> _handleEditUser(PgRole user) async {
+    final updatedUser = await showDialog<PgRole>(
+      context: context,
+      builder: (context) => CreateUserDialog(
+        dbService: _dbService,
+        initialUser: user,
+      ),
+    );
+
+    if (updatedUser != null && mounted) {
+      setState(() {
+        final idx = _users.indexWhere((u) => u.oid == user.oid || u.name == user.name);
+        if (idx != -1) {
+          _users[idx] = updatedUser;
+        } else if (updatedUser.canLogin) {
+          _users.add(updatedUser);
+        }
+        _users.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        if (_selectedUser?.oid == user.oid || _selectedUser?.name == user.name) {
+          _selectedUser = updatedUser;
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('User "${updatedUser.name}" updated successfully.')),
+      );
+    }
+    return updatedUser;
   }
 
   Future<void> _selectUser(PgRole user, bool isNarrow) async {
@@ -406,6 +446,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               currentUsername: _dbService.username,
               isDeletable: _isUserDeletable(user),
               onDeletePressed: _handleDeleteUser,
+              onEditPressed: (_canCreateRole && _showEditUserButton) ? _handleEditUser : null,
               dbService: _dbService,
               onRefresh: _refreshRolesData,
             ),
@@ -580,8 +621,8 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Role'),
-        content: Text('Are you sure you want to delete the role "${user.name}"? This action cannot be undone.'),
+        title: const Text('Delete User'),
+        content: Text('Are you sure you want to delete the user "${user.name}"? This action cannot be undone.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           ElevatedButton(
@@ -615,13 +656,13 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Role "${user.name}" deleted.')),
+          SnackBar(content: Text('User "${user.name}" deleted.')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete role: $e')),
+          SnackBar(content: Text('Failed to delete user: $e')),
         );
       }
     } finally {
@@ -646,7 +687,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     const Divider(),
                     SwitchListTile(
                       title: const Text('Show Descriptions'),
-                      subtitle: const Text('Show role and user descriptions'),
+                      subtitle: const Text('Show user and role descriptions'),
                       value: _showDescriptions,
                       onChanged: (value) {
                         _saveDescriptionsSetting(value);
@@ -662,6 +703,16 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         setModalState(() {});
                       },
                     ),
+                    if (_canCreateRole)
+                      SwitchListTile(
+                        title: const Text('Show User Edit'),
+                        subtitle: const Text('Show button to edit user details'),
+                        value: _showEditUserButton,
+                        onChanged: (value) {
+                          _saveShowEditUserButtonSetting(value);
+                          setModalState(() {});
+                        },
+                      ),
                     if (_canSetCategoryParameter)
                       SwitchListTile(
                         title: const Text('Show Category Edit'),
@@ -692,7 +743,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     ),
                     SwitchListTile(
                       title: const Text('Show Superusers'),
-                      subtitle: const Text('Include roles with superuser privileges'),
+                      subtitle: const Text('Include users with superuser privileges'),
                       value: _showSuperusers,
                       onChanged: (value) {
                         _saveSuperusersSetting(value);
@@ -745,7 +796,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       searchQuery: _userSearchQuery,
       showFilters: _showFilters,
       showDescriptions: _showDescriptions,
-      onAddPressed: _canCreateRole ? _createNewRole : null,
+      onAddPressed: _canCreateRole ? _createNewUser : null,
       onRefresh: _refreshRolesData,
     );
 
@@ -757,10 +808,16 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         backgroundColor: theme.colorScheme.primary,
         foregroundColor: theme.colorScheme.onPrimary,
         actions: [
+          if (_selectedUser != null && _canCreateRole && _showEditUserButton && !isNarrow)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit User',
+              onPressed: () => _handleEditUser(_selectedUser!),
+            ),
           if (_selectedUser != null && _isUserDeletable(_selectedUser!) && !isNarrow)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete Role',
+              tooltip: 'Delete User',
               onPressed: () => _handleDeleteUser(_selectedUser!),
             ),
           IconButton(

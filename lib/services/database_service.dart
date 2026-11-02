@@ -307,6 +307,11 @@ class DatabaseService {
                         AND m.admin_option = true
                   )
               ) AS is_admin,
+              CASE
+                  WHEN r.rolvaliduntil IS NOT NULL AND isfinite(r.rolvaliduntil)
+                  THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
+              END AS valid_until,
+              (r.rolvaliduntil IS NULL OR r.rolvaliduntil > CURRENT_TIMESTAMP) AS is_valid,
               me.is_super,
               me.can_create
           FROM pg_catalog.pg_roles r
@@ -326,7 +331,9 @@ class DatabaseService {
           is_current,
           description,
           is_admin,
-          (is_admin AND (is_super OR can_create)) AS can_drop
+          (is_admin AND (is_super OR can_create)) AS can_drop,
+          valid_until,
+          is_valid
       FROM user_roles
       ORDER BY LOWER(name) ASC
     ''',
@@ -557,6 +564,7 @@ class DatabaseService {
     required String name,
     String? description,
     String? password,
+    DateTime? validUntil,
     bool isSuper = false,
     bool inherit = true,
     bool createRole = false,
@@ -612,6 +620,10 @@ class DatabaseService {
       options.add('PASSWORD ${escapeLiteral(password)}');
     }
 
+    if (validUntil != null) {
+      options.add('VALID UNTIL ${escapeLiteral(PgRole.formatDate(validUntil))}');
+    }
+
     final sql = 'CREATE ROLE ${escapeIdentifier(name)} WITH ${options.join(' ')}';
     final pool = _getPool();
     await pool.execute(sql);
@@ -633,5 +645,65 @@ class DatabaseService {
     }
 
     return newRole;
+  }
+
+  Future<PgRole> updateRole({
+    required String oldName,
+    required String name,
+    String? description,
+    String? password,
+    DateTime? validUntil,
+  }) async {
+    final pool = _getPool();
+    final trimmedName = name.trim();
+    if (trimmedName != oldName) {
+      await pool.execute(
+        'ALTER ROLE ${escapeIdentifier(oldName)} RENAME TO ${escapeIdentifier(trimmedName)}',
+      );
+    }
+
+    final List<String> options = [];
+    if (password != null && password.isNotEmpty) {
+      options.add('PASSWORD ${escapeLiteral(password)}');
+    }
+    if (validUntil != null) {
+      options.add('VALID UNTIL ${escapeLiteral(PgRole.formatDate(validUntil))}');
+    } else {
+      options.add("VALID UNTIL 'infinity'");
+    }
+
+    await pool.execute(
+      'ALTER ROLE ${escapeIdentifier(trimmedName)} WITH ${options.join(' ')}',
+    );
+
+    final trimmedDesc = description?.trim();
+    if (trimmedDesc != null && trimmedDesc.isNotEmpty) {
+      await pool.execute(
+        'COMMENT ON ROLE ${escapeIdentifier(trimmedName)} IS ${escapeLiteral(trimmedDesc)}',
+      );
+    } else {
+      await pool.execute(
+        'COMMENT ON ROLE ${escapeIdentifier(trimmedName)} IS NULL',
+      );
+    }
+
+    final updatedRole = await fetchRoleByName(trimmedName, fromCache: false);
+    if (updatedRole == null) {
+      throw Exception('Role updated but not found in catalog');
+    }
+
+    if (_cachedRoles != null) {
+      final index = _cachedRoles!.indexWhere(
+        (r) => r.oid == updatedRole.oid || r.name == oldName,
+      );
+      if (index != -1) {
+        _cachedRoles![index] = updatedRole;
+      } else {
+        _cachedRoles!.add(updatedRole);
+      }
+      _cachedRoles!.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+
+    return updatedRole;
   }
 }

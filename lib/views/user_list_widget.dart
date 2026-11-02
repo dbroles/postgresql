@@ -34,15 +34,22 @@ class UserListWidget extends StatelessWidget {
       itemBuilder: (context, index) {
         final user = users[index];
         final theme = Theme.of(context);
+        final isInvalid = !user.isValid;
+        const invalidColor = Colors.grey;
         return ListTile(
           selected: selectedUserOid == user.oid,
           leading: Icon(
             Icons.person,
-            color: user.isSuperuser
-                ? Colors.amber
-                : (user.isCurrent ? Colors.cyan.shade600 : null),
+            color: isInvalid
+                ? invalidColor
+                : (user.isSuperuser
+                    ? Colors.amber
+                    : (user.isCurrent ? Colors.cyan.shade600 : null)),
           ),
-          title: Text(user.name),
+          title: Text(
+            user.name,
+            style: isInvalid ? const TextStyle(color: invalidColor) : null,
+          ),
           subtitle: (showDescriptions &&
                   user.description != null &&
                   user.description!.isNotEmpty)
@@ -51,7 +58,9 @@ class UserListWidget extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                    color: isInvalid
+                        ? invalidColor
+                        : theme.colorScheme.onSurfaceVariant,
                     fontStyle: FontStyle.italic,
                   ),
                 )

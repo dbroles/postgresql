@@ -19,6 +19,7 @@ class RoleMembershipPage extends StatefulWidget {
   final String currentUsername;
   final bool isDeletable;
   final Function(PgRole) onDeletePressed;
+  final Future<PgRole?> Function(PgRole)? onEditPressed;
   final DatabaseService? dbService;
   final Future<void> Function()? onRefresh;
 
@@ -36,6 +37,7 @@ class RoleMembershipPage extends StatefulWidget {
     required this.currentUsername,
     required this.isDeletable,
     required this.onDeletePressed,
+    this.onEditPressed,
     this.dbService,
     this.onRefresh,
   });
@@ -179,6 +181,16 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
     }
   }
 
+  Future<void> _handleEditUser() async {
+    if (widget.onEditPressed == null) return;
+    final updatedUser = await widget.onEditPressed!(_currentUser);
+    if (updatedUser != null && mounted) {
+      setState(() {
+        _currentUser = updatedUser;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,10 +199,16 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
+          if (widget.onEditPressed != null)
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit User',
+              onPressed: _handleEditUser,
+            ),
           if (widget.isDeletable)
             IconButton(
               icon: const Icon(Icons.delete_outline),
-              tooltip: 'Delete Role',
+              tooltip: 'Delete User',
               onPressed: () => widget.onDeletePressed(_currentUser),
             ),
         ],

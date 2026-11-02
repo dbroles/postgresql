@@ -121,4 +121,45 @@ void main() {
 
     expect(find.text('Finance Analyst'), findsNothing);
   });
+
+  testWidgets('UserListWidget renders invalid (expired) user in gray', (tester) async {
+    final validUser = PgRole(
+      oid: 1,
+      name: 'active_user',
+      description: 'Active account',
+      isValid: true,
+    );
+    final expiredUser = PgRole(
+      oid: 2,
+      name: 'expired_user',
+      description: 'Expired account',
+      validUntil: DateTime(2020, 1, 1),
+      isValid: false,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: UserListWidget(
+            users: [validUser, expiredUser],
+            onUserSelected: (_) {},
+            searchController: TextEditingController(),
+            searchQuery: '',
+            showFilters: false,
+            showDescriptions: true,
+          ),
+        ),
+      ),
+    );
+
+    final icons = tester.widgetList<Icon>(find.byIcon(Icons.person)).toList();
+    expect(icons[0].color, isNull);
+    expect(icons[1].color, Colors.grey);
+
+    final expiredTitle = tester.widget<Text>(find.text('expired_user'));
+    expect(expiredTitle.style?.color, Colors.grey);
+
+    final expiredSubtitle = tester.widget<Text>(find.text('Expired account'));
+    expect(expiredSubtitle.style?.color, Colors.grey);
+  });
 }
