@@ -173,17 +173,24 @@ class _UserListWidgetState extends State<UserListWidget> {
       );
     }
 
-    final items = <Widget>[
-      for (final user in activeUsers) _buildUserTile(user, theme),
-      _buildExpiredSectionHeader(expiredUsers.length, theme),
-      if (!_isExpiredCollapsed)
-        for (final user in expiredUsers) _buildUserTile(user, theme),
-    ];
+    final itemCount =
+        activeUsers.length + 1 + (_isExpiredCollapsed ? 0 : expiredUsers.length);
 
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: items.length,
-      itemBuilder: (context, index) => items[index],
+      itemCount: itemCount,
+      itemBuilder: (context, index) {
+        if (index < activeUsers.length) {
+          return _buildUserTile(activeUsers[index], theme);
+        }
+        if (index == activeUsers.length) {
+          return _buildExpiredSectionHeader(expiredUsers.length, theme);
+        }
+        return _buildUserTile(
+          expiredUsers[index - activeUsers.length - 1],
+          theme,
+        );
+      },
     );
   }
 

@@ -32,11 +32,15 @@ class FakeDatabaseService extends DatabaseService {
   final List<String> grantedRoles = [];
   final List<String> revokedRoles = [];
   final List<String> droppedRoles = [];
-  final Map<String, String?> roleCategories = {};
+  final Map<String, Map<String, String?>> _scopedRoleCategories = {};
+
+  Map<String, String?> get roleCategories =>
+      _scopedRoleCategories.putIfAbsent(categoryStorageScope, () => {});
 
   FakeDatabaseService({
     super.host = 'localhost',
     super.port = 5432,
+    super.database = 'postgres',
     super.username = 'test_user',
     super.password = '',
     super.sslMode = SslMode.disable,
@@ -55,15 +59,19 @@ class FakeDatabaseService extends DatabaseService {
   @override
   Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
     fetchGroupsForUserCalls++;
+    final storedCategories = await loadRoleCategories();
+    final currentCategories = roleCategories;
     if (mockUserGroups != null && mockUserGroups!.containsKey(userOid)) {
       final groups = mockUserGroups![userOid]!.map((g) {
-        if (roleCategories.containsKey(g.name)) {
-          final cat = roleCategories[g.name];
+        if (currentCategories.containsKey(g.name)) {
+          final cat = currentCategories[g.name];
           return g.copyWith(category: cat, clearCategory: cat == null);
+        } else if (storedCategories.containsKey(g.name)) {
+          return g.copyWith(category: storedCategories[g.name]);
         }
         return g;
       }).toList();
-      groups.sort(_compareGroups);
+      groups.sort(DatabaseService.compareGroups);
       return groups;
     }
     // Default fallback: generate from mockRoles (groups) and mockMemberships
@@ -79,6 +87,10 @@ class FakeDatabaseService extends DatabaseService {
 
       final isGrantedByMe = relevantMemberships.any((m) => m.grantor == username);
 
+      final cat = currentCategories.containsKey(g.name)
+          ? currentCategories[g.name]
+          : storedCategories[g.name];
+
       return PgUserGroup(
         oid: g.oid,
         name: g.name,
@@ -86,11 +98,11 @@ class FakeDatabaseService extends DatabaseService {
         grantors: otherGrantors,
         grantable: g.canManage,
         granted: isGrantedByMe,
-        category: roleCategories[g.name],
+        category: cat,
       );
     }).toList();
 
-    groups.sort(_compareGroups);
+    groups.sort(DatabaseService.compareGroups);
 
     return groups;
   }
@@ -104,40 +116,29 @@ class FakeDatabaseService extends DatabaseService {
     return fetchGroupsForUser(0, forceRefresh: forceRefresh);
   }
 
-  static int _compareGroups(PgUserGroup a, PgUserGroup b) {
-    final orderA = a.categoryOrder;
-    final orderB = b.categoryOrder;
-    if (orderA != null && orderB != null && orderA != orderB) {
-      return orderA.compareTo(orderB);
-    } else if (orderA != null && orderB == null) {
-      return -1;
-    } else if (orderA == null && orderB != null) {
-      return 1;
-    }
-    final catA = a.categoryName?.toLowerCase();
-    final catB = b.categoryName?.toLowerCase();
-    if (catA != null && catB != null) {
-      final cmp = catA.compareTo(catB);
-      if (cmp != 0) return cmp;
-    } else if (catA != null) {
-      return -1;
-    } else if (catB != null) {
-      return 1;
-    }
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  }
-
   @override
   Future<void> setRoleCategory(String roleName, String? category) async {
     final trimmed = category?.trim();
     roleCategories[roleName] = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+    await super.setRoleCategory(roleName, category);
   }
 
   @override
   Future<void> updateCategoryForRoles(Iterable<String> roleNames, String? newCategory) async {
+    final trimmed = newCategory?.trim();
     for (final roleName in roleNames) {
-      await setRoleCategory(roleName, newCategory);
+      roleCategories[roleName] = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
     }
+    await super.updateCategoryForRoles(roleNames, newCategory);
+  }
+
+  @override
+  Future<void> updateCategoriesBatch(Map<String, String?> updates) async {
+    for (final entry in updates.entries) {
+      final trimmed = entry.value?.trim();
+      roleCategories[entry.key] = (trimmed != null && trimmed.isNotEmpty) ? trimmed : null;
+    }
+    await super.updateCategoriesBatch(updates);
   }
 
   @override

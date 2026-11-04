@@ -10,7 +10,6 @@ class RoleMembershipPage extends StatefulWidget {
   final PgRole user;
   final List<PgUserGroup> groups;
   final Future<void> Function(PgUserGroup, bool) onToggleRole;
-  final Future<void> Function(PgUserGroup, String?)? onUpdateRoleCategory;
   final TextEditingController roleSearchController;
   final bool showSystemRoles;
   final bool showUngrantableRoles;
@@ -30,7 +29,6 @@ class RoleMembershipPage extends StatefulWidget {
     required this.user,
     required this.groups,
     required this.onToggleRole,
-    this.onUpdateRoleCategory,
     this.categoryTemplates = const [],
     required this.roleSearchController,
     required this.showSystemRoles,
@@ -138,20 +136,6 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
     await widget.onToggleRole(group, isAssigned);
   }
 
-  Future<void> _handleUpdateRoleCategory(PgUserGroup group, String? category) async {
-    if (widget.onUpdateRoleCategory != null) {
-      await widget.onUpdateRoleCategory!(group, category);
-      if (widget.dbService != null) {
-        final updatedGroups = await widget.dbService!.fetchGroupsForUser(_currentUser.oid);
-        if (mounted) {
-          setState(() {
-            _currentGroups = updatedGroups;
-          });
-        }
-      }
-    }
-  }
-
   Future<void> _handleRefresh() async {
     final shouldForceRefresh = widget.onRefresh == null;
     if (widget.onRefresh != null) {
@@ -245,7 +229,6 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
           user: _currentUser,
           groups: _currentGroups,
           onToggleRole: _handleToggle,
-          onUpdateRoleCategory: widget.onUpdateRoleCategory != null ? _handleUpdateRoleCategory : null,
           categoryTemplates: widget.categoryTemplates,
           isLoading: false,
           roleSearchController: widget.roleSearchController,

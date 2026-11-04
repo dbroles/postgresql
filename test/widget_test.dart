@@ -123,6 +123,9 @@ void main() {
       service.port = 5433;
       expect(service.port, 5433);
 
+      service.database = 'custom_db';
+      expect(service.database, 'custom_db');
+
       service.username = 'new_user';
       expect(service.username, 'new_user');
 

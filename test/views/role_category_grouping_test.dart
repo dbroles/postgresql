@@ -542,7 +542,13 @@ void main() {
       // Collapse 'department' while viewing alice
       await tester.tap(find.byKey(const ValueKey('category_header_department')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('adm'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(RoleManagementWidget),
+          matching: find.textContaining('adm'),
+        ),
+        findsNothing,
+      );
 
       // 4. Switch to 'bob' -> must show 'legacy_role' under 'policy' (no 'Ungrouped'),
       // 'department' must still be collapsed, and bob's granted counts must be 1/3 for department and 0/4 for policy
@@ -550,7 +556,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Ungrouped'), findsNothing);
-      expect(find.textContaining('adm'), findsNothing); // department stays collapsed
+      expect(
+        find.descendant(
+          of: find.byType(RoleManagementWidget),
+          matching: find.textContaining('adm'),
+        ),
+        findsNothing,
+      ); // department stays collapsed
       expect(find.text('1 / 3'), findsOneWidget); // department: hr is granted
       expect(find.text('0 / 4'), findsOneWidget); // policy: 0 of 4 granted for bob
       expect(find.textContaining('legacy_role'), findsOneWidget);
@@ -1244,6 +1256,123 @@ void main() {
       // Verify ungrantable role is hidden, while grantable role is displayed
       expect(find.widgetWithText(CheckboxListTile, 'grantable_role'), findsOneWidget);
       expect(find.widgetWithText(CheckboxListTile, 'ungrantable_role'), findsNothing);
+    });
+
+    testWidgets('Multi-admin isolation: Settings Role Categories tab only displays and updates categories for grantable roles', (tester) async {
+      final sampleUser = PgRole(
+        oid: 101,
+        name: 'operator_a',
+        canLogin: true,
+        isSuperuser: false,
+        inherit: true,
+        createRole: true,
+        createDb: false,
+        replication: false,
+        bypassRls: false,
+        canManage: true,
+        canDrop: true,
+      );
+
+      final mixedGroups = [
+        PgUserGroup(
+          oid: 501,
+          name: 'sales_rep',
+          category: 'sales:1:1E88E5',
+          grantable: true,
+          granted: false,
+          grantors: [],
+        ),
+        PgUserGroup(
+          oid: 502,
+          name: 'warehouse_forklift',
+          category: 'logistics:2:00ACC1',
+          grantable: false, // Belongs to Program B / another admin!
+          granted: false,
+          grantors: [],
+        ),
+      ];
+
+      final fakeDb = FakeDatabaseService(
+        roles: [sampleUser],
+        mockUserGroups: {sampleUser.oid: mixedGroups},
+        canSetCategoryParameterResult: true,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Role Categories'));
+      await tester.pumpAndSettle();
+
+      // Program A's category 'sales' must be displayed
+      expect(find.text('sales'), findsOneWidget);
+
+      // Program B's category 'logistics' must NOT be displayed because operator_a has no grantable roles in it!
+      expect(find.text('logistics'), findsNothing);
+    });
+
+    test('persists role categories in SharedPreferences scoped per host:login:database', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      final ungroupedRoles = [
+        PgUserGroup(
+          oid: 601,
+          name: 'hr',
+          grantable: true,
+          granted: false,
+          grantors: [],
+        ),
+        PgUserGroup(
+          oid: 602,
+          name: 'nld',
+          grantable: true,
+          granted: false,
+          grantors: [],
+        ),
+      ];
+
+      final dbProd = FakeDatabaseService(
+        host: 'rds.amazonaws.com',
+        username: 'dbroles',
+        database: 'app_prod',
+        mockUserGroups: {sampleUser.oid: ungroupedRoles},
+      );
+
+      final dbStaging = FakeDatabaseService(
+        host: 'rds.amazonaws.com',
+        username: 'dbroles',
+        database: 'app_staging',
+        mockUserGroups: {sampleUser.oid: ungroupedRoles},
+      );
+
+      expect(dbProd.categoryStorageScope, 'rds.amazonaws.com:dbroles:app_prod');
+      expect(dbStaging.categoryStorageScope, 'rds.amazonaws.com:dbroles:app_staging');
+
+      // Set category in app_prod
+      await dbProd.setRoleCategory('hr', 'department:1:1E88E5');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString('role_categories_rds.amazonaws.com:dbroles:app_prod'),
+        contains('"hr":"department:1:1E88E5"'),
+      );
+      expect(
+        prefs.getString('role_categories_rds.amazonaws.com:dbroles:app_staging'),
+        isNull,
+      );
+
+      // Verify app_prod returns categorized 'hr' while app_staging remains ungrouped
+      final prodGroups = await dbProd.fetchGroupsForUser(sampleUser.oid);
+      expect(prodGroups.firstWhere((g) => g.name == 'hr').categoryName, 'department');
+
+      final stagingGroups = await dbStaging.fetchGroupsForUser(sampleUser.oid);
+      expect(stagingGroups.firstWhere((g) => g.name == 'hr').category, isNull);
     });
   });
 }

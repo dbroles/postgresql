@@ -165,57 +165,15 @@ SELECT
     pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
     '{}'::text[] AS grantors,
     (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-    false AS granted,
-    NULLIF(
-        btrim((
-            SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-            FROM unnest(g.rolconfig) AS cfg
-            WHERE cfg LIKE 'dbroles.category=%'
-            LIMIT 1
-        )),
-        ''
-    ) AS category
+    false AS granted
 FROM pg_catalog.pg_roles g
 LEFT JOIN pg_catalog.pg_auth_members me
     ON g.oid = me.roleid
    AND me.member = CURRENT_USER::regrole::oid
    AND me.admin_option = true
 WHERE NOT g.rolcanlogin
-GROUP BY g.oid, g.rolname, g.rolconfig
-ORDER BY
-    (CASE 
-        WHEN split_part(
-            NULLIF(btrim((
-                SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                FROM unnest(g.rolconfig) AS cfg
-                WHERE cfg LIKE 'dbroles.category=%'
-                LIMIT 1
-            )), ''),
-            ':', 2
-        ) ~ '^[0-9]+$'
-        THEN split_part(
-            NULLIF(btrim((
-                SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                FROM unnest(g.rolconfig) AS cfg
-                WHERE cfg LIKE 'dbroles.category=%'
-                LIMIT 1
-            )), ''),
-            ':', 2
-        )::int
-    END) ASC NULLS LAST,
-    LOWER(NULLIF(
-        split_part(
-            btrim((
-                SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                FROM unnest(g.rolconfig) AS cfg
-                WHERE cfg LIKE 'dbroles.category=%'
-                LIMIT 1
-            )),
-            ':', 1
-        ),
-        ''
-    )) ASC NULLS LAST,
-    LOWER(g.rolname) ASC;
+GROUP BY g.oid, g.rolname
+ORDER BY LOWER(g.rolname) ASC;
 ```
 
 The query to fetch a user's role memberships (and track grantors) is:
@@ -262,26 +220,27 @@ The application determines which actions and settings are visible based on the p
 ### 5. Grant / Revoke Role (Role Checkbox)
 - **Enabled when**: The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
 
-### 6. Role Categories Management & Assignment (`dbroles.category`)
+### 6. Role Categories Management & Assignment (Local `SharedPreferences` per `host:login:database`)
 - **Centralized Management in App Settings ("Role Categories" Tab)**:
-  - Accessible in App Settings under a dedicated **Role Categories** tab when the connected account has `SET` privilege on `dbroles.category` (`has_parameter_privilege('dbroles.category', 'SET') = true`).
-  - To grant this privilege to the `dbroles` admin account, run as a superuser:
-    ```sql
-    GRANT SET ON PARAMETER dbroles.category TO dbroles;
-    ```
+  - Accessible in App Settings under a dedicated **Role Categories** tab.
+  - **Local Per-Connection Storage (`host:login:database`)**:
+    - Role-to-category assignments (`role_categories_<host>:<login>:<database>`) and custom category templates (`savedRoleCategoryTemplates_<host>:<login>:<database>`) are persisted locally in application `SharedPreferences` scoped to the active `host:login:database` tuple.
+    - **Why this was chosen**: On managed DBaaS platforms (AWS RDS, Google Cloud SQL, Azure, Neon, Supabase), the master administrative account (`rds_superuser`, `cloudsqlsuperuser`, etc.) has `rolsuper = false`. PostgreSQL's C implementation of `GRANT SET ON PARAMETER` and `ALTER ROLE ... SET <custom_parameter>` strictly requires true C-level `superuser()` (`rolsuper = true`) for custom parameters. Storing categories locally in `SharedPreferences` per `host:login:database` eliminates any PostgreSQL custom parameter setup while providing full multi-tenant isolation per host, login account, and database.
   - **Clean Role View**: Role rows on the main user membership page (`RoleManagementWidget`) remain uncluttered and focused strictly on granting/revoking roles for users.
-  - **Drag-and-Drop Reordering**: Categories can be dragged and reordered directly in Settings. Reordering automatically assigns the new 1-based numeric sort order (`1`, `2`, `3`...) and updates `dbroles.category` across all member roles in PostgreSQL.
+  - **Drag-and-Drop Reordering**: Categories can be dragged and reordered directly in Settings. Reordering automatically assigns the new 1-based numeric sort order (`1`, `2`, `3`...) and updates the category across all member roles.
   - **Category Editing & Role Assignment (✎)**:
     - Edit category name and color.
-    - Choose which roles belong to the category directly in the dialog via a searchable, virtualized checkbox list supporting 100+ groups smoothly.
+    - Choose which grantable roles belong to the category directly in the dialog via a searchable, virtualized checkbox list supporting 100+ groups smoothly.
     - The search box filters by both role name and description (e.g. searching for "country" matches roles with "country" in their comment/description).
     - Quick filter segments: `All`, `In Category`, and `Ungrouped`, with "Select All" / "Deselect All" bulk actions.
     - Roles newly selected are updated to the category in batch; unselected roles have their category cleared in batch.
-  - **Global Category Deletion (🗑)**: Deleting a category prompts for confirmation and clears `dbroles.category` on all member roles (`ALTER ROLE <role> RESET dbroles.category`), returning them to Ungrouped.
+  - **Global Category Deletion (🗑)**: Deleting a category prompts for confirmation and clears the category on all member roles, returning them to Ungrouped.
   - **New Category (+)**: Allows creating a new category with color presets and immediately selecting member roles.
+- **Configurable Database Parameter**:
+  - Connection Settings support custom database names (defaulting to `postgres`). This unlocks full compatibility with DBaaS providers (e.g. AWS RDS, Render, Railway, Neon) that assign custom database names.
 - **Extended Category Format (`name[:order[:color]]`)**:
   - Categories support an optional numeric sort order and hex color, e.g. `department:1:34BB22` or `country:2:88AA00`.
-  - Roles are sorted in PostgreSQL by custom numeric order first (`ASC NULLS LAST`), then category name alphabetically, then role name.
+  - Roles are sorted by custom numeric order first (`ASC NULLS LAST`), then category name alphabetically, then role name.
   - Section headers display category color accents and count badges.
 
 ### 7. Attribute Assignment & Superuser Safety Rules

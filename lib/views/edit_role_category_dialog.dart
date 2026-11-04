@@ -143,8 +143,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
     return widget.availableRoles!.where((r) => r.grantable).toList();
   }
 
-  List<PgUserGroup> _getFilteredRoles() {
-    final grantable = _grantableRoles;
+  List<PgUserGroup> _getFilteredRoles(List<PgUserGroup> grantable) {
     if (grantable.isEmpty) return [];
     final query = _searchQuery.trim().toLowerCase();
 
@@ -209,15 +208,21 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
 
   Widget _buildRoleListSection(ThemeData theme) {
     final grantable = _grantableRoles;
-    final filtered = _getFilteredRoles();
+    final filtered = _getFilteredRoles(grantable);
     final allFilteredSelected = filtered.isNotEmpty &&
         filtered.every((r) => _selectedRoleNames.contains(r.name));
 
     final allCount = grantable.length;
-    final inCatCount = _selectedRoleNames.where((name) => grantable.any((r) => r.name == name)).length;
-    final ungroupedCount = grantable
-        .where((r) => r.category == null || r.category!.trim().isEmpty)
-        .length;
+    var inCatCount = 0;
+    var ungroupedCount = 0;
+    for (final r in grantable) {
+      if (_selectedRoleNames.contains(r.name)) {
+        inCatCount++;
+      }
+      if (r.category == null || r.category!.trim().isEmpty) {
+        ungroupedCount++;
+      }
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

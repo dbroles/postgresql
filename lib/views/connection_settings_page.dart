@@ -1,14 +1,69 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:postgres/postgres.dart';
 import '../services/database_service.dart';
 import '../services/credential_storage_service.dart';
+import 'connection_status_bar.dart';
 import 'create_role_admin_dialog.dart';
 import 'role_admin_success_dialog.dart';
+
+class SavedConnectionProfile {
+  final String host;
+  final int port;
+  final String database;
+  final String username;
+  final bool useSsl;
+  final bool rememberPassword;
+
+  const SavedConnectionProfile({
+    required this.host,
+    required this.port,
+    required this.database,
+    required this.username,
+    required this.useSsl,
+    required this.rememberPassword,
+  });
+
+  String get key => CredentialStorageService.connectionStorageKey(
+        host: host,
+        port: port,
+        database: database,
+        username: username,
+      );
+
+  String get label => ConnectionStatusBar.formatConnectionTarget(
+        username: username,
+        host: host,
+        port: port,
+        database: database,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'host': host,
+        'port': port,
+        'database': database,
+        'username': username,
+        'useSsl': useSsl,
+        'rememberPassword': rememberPassword,
+      };
+
+  factory SavedConnectionProfile.fromJson(Map<String, dynamic> json) {
+    return SavedConnectionProfile(
+      host: (json['host'] as String?) ?? 'localhost',
+      port: (json['port'] as int?) ?? 5432,
+      database: (json['database'] as String?) ?? 'postgres',
+      username: (json['username'] as String?) ?? 'dbroles',
+      useSsl: (json['useSsl'] as bool?) ?? true,
+      rememberPassword: (json['rememberPassword'] as bool?) ?? true,
+    );
+  }
+}
 
 typedef DatabaseServiceFactory = DatabaseService Function({
   String host,
   int port,
+  String database,
   String username,
   String password,
   SslMode sslMode,
@@ -31,14 +86,19 @@ class ConnectionSettingsPage extends StatefulWidget {
 }
 
 class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
+  static const String savedConnectionsPrefKey = 'saved_connections';
+  static const int _maxSavedConnections = 10;
+
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _hostController;
   late TextEditingController _portController;
+  late TextEditingController _dbController;
   late TextEditingController _userController;
   late TextEditingController _passController;
   late bool _useSsl;
   late final CredentialStorageService _credentialStorage;
   bool _rememberPassword = true;
+  List<SavedConnectionProfile> _savedConnections = [];
   
   bool _isTesting = false;
   String? _testResult;
@@ -49,6 +109,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     super.initState();
     _hostController = TextEditingController(text: widget.dbService.host);
     _portController = TextEditingController(text: widget.dbService.port.toString());
+    _dbController = TextEditingController(text: widget.dbService.database);
     _userController = TextEditingController(text: widget.dbService.username);
     _passController = TextEditingController(text: widget.dbService.password);
     _useSsl = widget.dbService.sslMode != SslMode.disable;
@@ -59,13 +120,31 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
   Future<void> _loadRememberPasswordPreference() async {
     final prefs = await SharedPreferences.getInstance();
     final remember = prefs.getBool('db_remember_pass') ?? true;
+    final rawSaved = prefs.getStringList(savedConnectionsPrefKey) ?? [];
+    final savedProfiles = <SavedConnectionProfile>[];
+    for (final item in rawSaved) {
+      try {
+        final decoded = jsonDecode(item);
+        if (decoded is Map<String, dynamic>) {
+          savedProfiles.add(SavedConnectionProfile.fromJson(decoded));
+        }
+      } catch (_) {}
+    }
+
     String? securePass;
     if (remember && _passController.text.isEmpty) {
-      securePass = await _credentialStorage.getPassword();
+      final connKey = CredentialStorageService.connectionStorageKey(
+        host: widget.dbService.host,
+        port: widget.dbService.port,
+        database: widget.dbService.database,
+        username: widget.dbService.username,
+      );
+      securePass = await _credentialStorage.getPassword(connectionKey: connKey);
     }
     if (mounted) {
       setState(() {
         _rememberPassword = remember;
+        _savedConnections = savedProfiles;
         if (securePass != null && _passController.text.isEmpty) {
           _passController.text = securePass;
         }
@@ -73,10 +152,47 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     }
   }
 
+  Future<void> _selectSavedConnection(SavedConnectionProfile profile) async {
+    String? storedPass;
+    if (profile.rememberPassword) {
+      storedPass = await _credentialStorage.getPassword(
+        connectionKey: profile.key,
+        fallbackToDefault: false,
+      );
+    }
+    if (!mounted) return;
+    setState(() {
+      _hostController.text = profile.host;
+      _portController.text = profile.port.toString();
+      _dbController.text = profile.database;
+      _userController.text = profile.username;
+      _passController.text = storedPass ?? '';
+      _useSsl = profile.useSsl;
+      _rememberPassword = profile.rememberPassword;
+      _testResult = null;
+    });
+  }
+
+  Future<void> _deleteSavedConnection(SavedConnectionProfile profile) async {
+    setState(() {
+      _savedConnections.removeWhere((p) => p.key == profile.key);
+    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      savedConnectionsPrefKey,
+      _savedConnections.map((p) => jsonEncode(p.toJson())).toList(),
+    );
+    await _credentialStorage.deletePassword(
+      connectionKey: profile.key,
+      onlyScoped: true,
+    );
+  }
+
   @override
   void dispose() {
     _hostController.dispose();
     _portController.dispose();
+    _dbController.dispose();
     _userController.dispose();
     _passController.dispose();
     super.dispose();
@@ -94,12 +210,14 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     final testService = factory(
       host: _hostController.text.trim(),
       port: int.parse(_portController.text.trim()),
+      database: _dbController.text.trim().isEmpty ? 'postgres' : _dbController.text.trim(),
       username: _userController.text.trim(),
       password: _passController.text, // Don't trim password
       sslMode: _useSsl ? SslMode.require : SslMode.disable,
     );
 
     final error = await testService.testConnection();
+    await testService.close();
     
     if (mounted) {
       setState(() {
@@ -115,6 +233,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
 
     final host = _hostController.text.trim();
     final portString = _portController.text.trim();
+    final database = _dbController.text.trim().isEmpty ? 'postgres' : _dbController.text.trim();
     final username = _userController.text.trim();
     final password = _passController.text;
     final port = int.parse(portString);
@@ -124,6 +243,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     final tempService = factory(
       host: host,
       port: port,
+      database: database,
       username: username,
       password: password,
       sslMode: _useSsl ? SslMode.require : SslMode.disable,
@@ -183,19 +303,39 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('db_host', host);
     await prefs.setInt('db_port', port);
+    await prefs.setString('db_name', database);
     final sslMode = _useSsl ? SslMode.require : SslMode.disable;
     await prefs.setString('db_user', username);
     await prefs.setBool('db_remember_pass', _rememberPassword);
     await prefs.setInt('db_ssl_mode', sslMode.index);
 
+    final profile = SavedConnectionProfile(
+      host: host,
+      port: port,
+      database: database,
+      username: username,
+      useSsl: _useSsl,
+      rememberPassword: _rememberPassword,
+    );
+    _savedConnections.removeWhere((p) => p.key == profile.key);
+    _savedConnections.insert(0, profile);
+    if (_savedConnections.length > _maxSavedConnections) {
+      _savedConnections = _savedConnections.sublist(0, _maxSavedConnections);
+    }
+    await prefs.setStringList(
+      savedConnectionsPrefKey,
+      _savedConnections.map((p) => jsonEncode(p.toJson())).toList(),
+    );
+
     if (_rememberPassword) {
-      await _credentialStorage.savePassword(password);
+      await _credentialStorage.savePassword(password, connectionKey: profile.key);
     } else {
-      await _credentialStorage.deletePassword();
+      await _credentialStorage.deletePassword(connectionKey: profile.key);
     }
 
     widget.dbService.host = host;
     widget.dbService.port = port;
+    widget.dbService.database = database;
     widget.dbService.username = username;
     widget.dbService.password = password;
     widget.dbService.sslMode = sslMode;
@@ -224,7 +364,40 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('Configure your PostgreSQL connection parameters below.'),
+                  if (_savedConnections.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      'Saved Connections',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade700,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _savedConnections.map((profile) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8.0),
+                            child: InputChip(
+                              key: ValueKey('saved_conn_${profile.key}'),
+                              avatar: Icon(
+                                profile.useSsl ? Icons.lock_outline : Icons.storage_outlined,
+                                size: 16,
+                              ),
+                              label: Text(profile.label),
+                              tooltip: 'Load ${profile.label}',
+                              onPressed: () => _selectSavedConnection(profile),
+                              onDeleted: () => _deleteSavedConnection(profile),
+                              deleteButtonTooltipMessage: 'Remove saved connection',
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   if (isWide)
                     Row(
@@ -276,6 +449,16 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
                       validator: (v) => v == null || int.tryParse(v) == null ? 'Invalid port' : null,
                     ),
                   ],
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _dbController,
+                    decoration: const InputDecoration(
+                      labelText: 'Database',
+                      hintText: 'postgres',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                  ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: _userController,

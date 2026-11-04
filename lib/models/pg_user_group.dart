@@ -9,6 +9,18 @@ class PgUserGroup {
   bool granted;
   final String? category;
 
+  /// Pre-parsed human-readable category name from format "name[:order[:color]]"
+  final String? categoryName;
+
+  /// Pre-parsed numeric sort order if present
+  final int? categoryOrder;
+
+  /// Pre-parsed 6-character hex color string (without '#') if present
+  final String? categoryColorHex;
+
+  /// Pre-parsed [Color] from [categoryColorHex], or null if invalid/not provided
+  final Color? categoryColor;
+
   PgUserGroup({
     required this.oid,
     required this.name,
@@ -17,48 +29,70 @@ class PgUserGroup {
     required this.grantable,
     required this.granted,
     this.category,
-  });
+  })  : categoryName = _parseCategoryName(category),
+        categoryOrder = _parseCategoryOrder(category),
+        categoryColorHex = _parseCategoryColorHex(category),
+        categoryColor = _parseCategoryColor(_parseCategoryColorHex(category));
 
-  /// Extracts the human-readable category name from format "name[:order[:color]]"
-  String? get categoryName {
-    if (category == null || category!.isEmpty) return null;
-    final parts = category!.split(':');
-    final name = parts[0].trim();
-    return name.isNotEmpty ? name : null;
+  static String? _parseCategoryName(String? category) {
+    if (category == null || category.isEmpty) return null;
+    final colonIdx = category.indexOf(':');
+    final rawName = colonIdx == -1 ? category : category.substring(0, colonIdx);
+    final trimmed = rawName.trim();
+    return trimmed.isNotEmpty ? trimmed : null;
   }
 
-  /// Extracts the numeric sort order if present
-  int? get categoryOrder {
-    if (category == null || category!.isEmpty) return null;
-    final parts = category!.split(':');
-    if (parts.length > 1) {
-      return int.tryParse(parts[1].trim());
-    }
-    return null;
+  static int? _parseCategoryOrder(String? category) {
+    if (category == null || category.isEmpty) return null;
+    final firstColon = category.indexOf(':');
+    if (firstColon == -1) return null;
+    final secondColon = category.indexOf(':', firstColon + 1);
+    final rawOrder = secondColon == -1
+        ? category.substring(firstColon + 1)
+        : category.substring(firstColon + 1, secondColon);
+    return int.tryParse(rawOrder.trim());
   }
 
-  /// Extracts the 6-character hex color string (without '#') if present
-  String? get categoryColorHex {
-    if (category == null || category!.isEmpty) return null;
-    final parts = category!.split(':');
-    if (parts.length > 2) {
-      var hex = parts[2].trim();
-      if (hex.startsWith('#')) hex = hex.substring(1);
-      return hex.isNotEmpty ? hex : null;
-    }
-    return null;
+  static String? _parseCategoryColorHex(String? category) {
+    if (category == null || category.isEmpty) return null;
+    final firstColon = category.indexOf(':');
+    if (firstColon == -1) return null;
+    final secondColon = category.indexOf(':', firstColon + 1);
+    if (secondColon == -1) return null;
+    var hex = category.substring(secondColon + 1).trim();
+    if (hex.startsWith('#')) hex = hex.substring(1);
+    return hex.isNotEmpty ? hex : null;
   }
 
-  /// Parses the color hex into a [Color], or null if invalid/not provided
-  Color? get categoryColor {
-    final hex = categoryColorHex;
+  static Color? _parseCategoryColor(String? hex) {
     if (hex == null) return null;
     final cleanHex = hex.length == 6 ? 'FF$hex' : hex;
     final val = int.tryParse(cleanHex, radix: 16);
-    if (val != null) {
-      return Color(val);
+    return val != null ? Color(val) : null;
+  }
+
+  /// Parses PostgreSQL grantor array values (either a Dart [List] or PG array literal `"{a,b}"`).
+  static List<String> parseGrantors(dynamic rawGrantors) {
+    if (rawGrantors is List) {
+      return rawGrantors
+          .where((e) => e != null)
+          .map((e) => e.toString().trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    } else if (rawGrantors is String) {
+      var str = rawGrantors.trim();
+      if (str.startsWith('{') && str.endsWith('}')) {
+        str = str.substring(1, str.length - 1).trim();
+        if (str.isNotEmpty) {
+          return str
+              .split(',')
+              .map((s) => s.replaceAll('"', '').trim())
+              .where((s) => s.isNotEmpty)
+              .toList();
+        }
+      }
     }
-    return null;
+    return [];
   }
 
   /// Formats category components into "name[:order[:color]]" string
@@ -81,28 +115,7 @@ class PgUserGroup {
   }
 
   factory PgUserGroup.fromRow(List<dynamic> row) {
-    final rawGrantors = row[3];
-    List<String> parsedGrantors = [];
-    if (rawGrantors is List) {
-      parsedGrantors = rawGrantors
-          .where((e) => e != null)
-          .map((e) => e.toString().trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    } else if (rawGrantors is String) {
-      // PostgreSQL literal array format: "{postgres,daniel}" or "{}"
-      var str = rawGrantors.trim();
-      if (str.startsWith('{') && str.endsWith('}')) {
-        str = str.substring(1, str.length - 1).trim();
-        if (str.isNotEmpty) {
-          parsedGrantors = str
-              .split(',')
-              .map((s) => s.replaceAll('"', '').trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-        }
-      }
-    }
+    final parsedGrantors = parseGrantors(row[3]);
 
     final rawCategory = row.length > 6 ? (row[6] as String?)?.trim() : null;
     final category = (rawCategory != null && rawCategory.isNotEmpty) ? rawCategory : null;

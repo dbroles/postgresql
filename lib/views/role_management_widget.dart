@@ -9,7 +9,6 @@ class RoleManagementWidget extends StatefulWidget {
   final PgRole user;
   final List<PgUserGroup> groups;
   final Future<void> Function(PgUserGroup, bool) onToggleRole;
-  final Future<void> Function(PgUserGroup, String?)? onUpdateRoleCategory;
   final bool isLoading;
   final TextEditingController roleSearchController;
   final bool showSystemRoles;
@@ -26,7 +25,6 @@ class RoleManagementWidget extends StatefulWidget {
     required this.user,
     required this.groups,
     required this.onToggleRole,
-    this.onUpdateRoleCategory,
     this.categoryTemplates = const [],
     required this.isLoading,
     required this.roleSearchController,
@@ -542,20 +540,24 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
       sectionGroups[key]!.add(group);
     }
 
-    final listItems = <Widget>[];
+    final itemBuilders = <Widget Function()>[];
     for (final key in sectionOrder) {
       final groupsInSection = sectionGroups[key]!;
       final assignedCount = groupsInSection.where(_isGroupAssigned).length;
       final isCollapsed = _collapsedSections.contains(key);
+      final title = sectionTitles[key]!;
+      final order = sectionOrders[key];
+      final color = sectionColors[key];
+      final totalCount = groupsInSection.length;
 
-      listItems.add(
-        _buildSectionHeader(
+      itemBuilders.add(
+        () => _buildSectionHeader(
           sectionKey: key,
-          title: sectionTitles[key]!,
-          order: sectionOrders[key],
-          color: sectionColors[key],
+          title: title,
+          order: order,
+          color: color,
           assignedCount: assignedCount,
-          totalCount: groupsInSection.length,
+          totalCount: totalCount,
           isCollapsed: isCollapsed,
           theme: theme,
         ),
@@ -563,15 +565,15 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
 
       if (!isCollapsed) {
         for (final group in groupsInSection) {
-          listItems.add(_buildRoleTile(group, theme));
+          itemBuilders.add(() => _buildRoleTile(group, theme));
         }
       }
     }
 
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: listItems.length,
-      itemBuilder: (context, index) => listItems[index],
+      itemCount: itemBuilders.length,
+      itemBuilder: (context, index) => itemBuilders[index](),
     );
   }
 

@@ -37,7 +37,8 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   List<PgRole> _groups = [];
   List<PgUserGroup> _groupCatalog = [];
   List<String> _savedCategoryTemplates = [];
-  static const String _customCategoriesPrefKey = 'savedRoleCategoryTemplates';
+  String get _customCategoriesPrefKey =>
+      'savedRoleCategoryTemplates_${_dbService.categoryStorageScope}';
 
   List<String> get _allCategoryTemplates {
     final seen = <String>{};
@@ -53,6 +54,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
 
     for (final g in _groupCatalog) {
+      if (!g.grantable) continue;
       final cat = g.category?.trim();
       if (cat != null && cat.isNotEmpty) {
         final key = cat.split(':').first.trim().toLowerCase();
@@ -63,6 +65,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
 
     for (final g in _selectedUserGroups) {
+      if (!g.grantable) continue;
       final cat = g.category?.trim();
       if (cat != null && cat.isNotEmpty) {
         final key = cat.split(':').first.trim().toLowerCase();
@@ -239,11 +242,18 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     // Load Connection Settings
     _dbService.host = prefs.getString('db_host') ?? 'localhost';
     _dbService.port = prefs.getInt('db_port') ?? 5432;
+    _dbService.database = prefs.getString('db_name') ?? 'postgres';
     _dbService.username = prefs.getString('db_user') ?? 'dbroles';
 
     final rememberPass = prefs.getBool('db_remember_pass') ?? true;
     if (rememberPass) {
-      final securePass = await _credentialStorage.getPassword();
+      final connKey = CredentialStorageService.connectionStorageKey(
+        host: _dbService.host,
+        port: _dbService.port,
+        database: _dbService.database,
+        username: _dbService.username,
+      );
+      final securePass = await _credentialStorage.getPassword(connectionKey: connKey);
       _dbService.password = securePass ?? '';
     } else {
       _dbService.password = '';
@@ -259,7 +269,10 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       _showDescriptions = prefs.getBool('showDescriptions') ?? true;
       _showFilters = prefs.getBool('showFilters') ?? false;
       _showConnectedUser = prefs.getBool('showConnectedUser') ?? false;
-      _savedCategoryTemplates = prefs.getStringList(_customCategoriesPrefKey) ?? [];
+      _savedCategoryTemplates =
+          prefs.getStringList(_customCategoriesPrefKey) ??
+          prefs.getStringList('savedRoleCategoryTemplates') ??
+          [];
     });
     
     await _loadInitialData();
@@ -367,14 +380,22 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         return;
       }
 
-      final allRoles = await _dbService.fetchAllRoles(forceRefresh: true);
-      final groupCatalog = await _dbService.fetchGroupCatalog(forceRefresh: true);
-      final clusterName = await _dbService.fetchClusterName();
-      final isSsl = await _dbService.fetchSslStatus();
+      final prefs = await SharedPreferences.getInstance();
+      final savedTemplates =
+          prefs.getStringList(_customCategoriesPrefKey) ??
+          prefs.getStringList('savedRoleCategoryTemplates') ??
+          [];
+      final (allRoles, groupCatalog, clusterName, isSsl) = await (
+        _dbService.fetchAllRoles(forceRefresh: true),
+        _dbService.fetchGroupCatalog(forceRefresh: true),
+        _dbService.fetchClusterName(),
+        _dbService.fetchSslStatus(),
+      ).wait;
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
       final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter();
       
       setState(() {
+        _savedCategoryTemplates = savedTemplates;
         _users = allRoles.where((r) => r.canLogin).toList();
         _groups = allRoles.where((r) => !r.canLogin).toList();
         _groupCatalog = groupCatalog;
@@ -575,14 +596,16 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
   Future<void> _refreshRolesData() async {
     try {
-      final allRoles = await _dbService.fetchAllRoles(forceRefresh: true);
-      final groupCatalog = await _dbService.fetchGroupCatalog(forceRefresh: true);
+      final (allRoles, groupCatalog, clusterName, isSsl) = await (
+        _dbService.fetchAllRoles(forceRefresh: true),
+        _dbService.fetchGroupCatalog(forceRefresh: true),
+        _dbService.fetchClusterName(),
+        _dbService.fetchSslStatus(),
+      ).wait;
       List<PgUserGroup>? refreshedGroups;
       if (_selectedUser != null) {
         refreshedGroups = await _dbService.fetchGroupsForUser(_selectedUser!.oid, forceRefresh: true);
       }
-      final clusterName = await _dbService.fetchClusterName();
-      final isSsl = await _dbService.fetchSslStatus();
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
       final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter(forceRefresh: true);
       if (!mounted) return;
@@ -854,7 +877,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
           ),
           SwitchListTile(
             title: const Text('Show Users Without Admin'),
-            subtitle: const Text('Include users for which for which we do not have ADMIN OPTION'),
+            subtitle: const Text('Include users for which we do not have ADMIN OPTION'),
             value: _showUsersWithoutAdminOption,
             onChanged: (value) {
               _saveUsersWithoutAdminOptionSetting(value);
@@ -906,13 +929,15 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   Widget _buildRoleCategoriesTab(void Function(void Function()) setModalState) {
     final theme = Theme.of(context);
 
-    // Group all roles from _groupCatalog and _selectedUserGroups by category
+    // Group only grantable roles by category so operators only see and manage their own roles
     final Map<String, List<PgUserGroup>> categoryMembers = {};
     final Map<String, PgUserGroup> categorySamples = {};
 
-    final allGroups = _groupCatalog.isNotEmpty ? _groupCatalog : _selectedUserGroups;
+    final managedGroups = (_groupCatalog.isNotEmpty ? _groupCatalog : _selectedUserGroups)
+        .where((r) => r.grantable)
+        .toList();
 
-    for (final g in allGroups) {
+    for (final g in managedGroups) {
       final raw = g.category?.trim();
       if (raw != null && raw.isNotEmpty) {
         final catName = g.categoryName ?? raw;
@@ -1026,6 +1051,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     final item = sortedCategoryNames.removeAt(oldIndex);
                     sortedCategoryNames.insert(newIndex, item);
 
+                    final batchUpdates = <String, String?>{};
                     for (int i = 0; i < sortedCategoryNames.length; i++) {
                       final cat = sortedCategoryNames[i];
                       final newOrder = i + 1;
@@ -1036,13 +1062,16 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         order: newOrder,
                         colorHex: sample.categoryColorHex,
                       );
-                      if (members.isNotEmpty) {
-                        await _dbService.updateCategoryForRoles(members.map((r) => r.name), formatted);
+                      for (final member in members) {
+                        batchUpdates[member.name] = formatted;
                       }
                       _savedCategoryTemplates.removeWhere(
                         (t) => t.split(':').first.trim().toLowerCase() == cat.toLowerCase(),
                       );
                       _savedCategoryTemplates.add(formatted);
+                    }
+                    if (batchUpdates.isNotEmpty) {
+                      await _dbService.updateCategoriesBatch(batchUpdates);
                     }
                     await _saveCustomCategoryTemplates();
                     await _refreshRolesData();
@@ -1133,11 +1162,13 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     final assignedRoleNames = newSelectedSet.toList();
 
     try {
-      if (removedRoleNames.isNotEmpty) {
-        await _dbService.updateCategoryForRoles(removedRoleNames, null);
-      }
-      if (assignedRoleNames.isNotEmpty && normalized != null) {
-        await _dbService.updateCategoryForRoles(assignedRoleNames, normalized);
+      final batchUpdates = <String, String?>{
+        for (final name in removedRoleNames) name: null,
+        if (normalized != null)
+          for (final name in assignedRoleNames) name: normalized,
+      };
+      if (batchUpdates.isNotEmpty) {
+        await _dbService.updateCategoriesBatch(batchUpdates);
       }
       _savedCategoryTemplates.removeWhere(
         (t) => t.split(':').first.trim().toLowerCase() == catName.toLowerCase(),
@@ -1386,6 +1417,9 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       bottomNavigationBar: ConnectionStatusBar(
         clusterName: _clusterName,
         host: _dbService.host,
+        port: _dbService.port,
+        database: _dbService.database,
+        username: _dbService.username,
         isSslEnabled: _isSslEnabled,
         onTap: _openConnectionSettings,
       ),

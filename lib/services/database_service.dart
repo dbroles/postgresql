@@ -1,11 +1,13 @@
+import 'dart:convert';
 import 'package:postgres/postgres.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 
 class DatabaseService {
   String _host;
   int _port;
-  final String database = 'postgres';
+  String _database;
   String _username;
   String _password;
   SslMode _sslMode;
@@ -24,11 +26,13 @@ class DatabaseService {
   DatabaseService({
     String host = 'localhost',
     int port = 5432,
+    String database = 'postgres',
     String username = 'dbroles',
     String password = '',
     SslMode sslMode = SslMode.require,
   })  : _host = host,
         _port = port,
+        _database = database,
         _username = username,
         _password = password,
         _sslMode = sslMode;
@@ -45,6 +49,14 @@ class DatabaseService {
   set port(int value) {
     if (_port != value) {
       _port = value;
+      _resetPool();
+    }
+  }
+
+  String get database => _database;
+  set database(String value) {
+    if (_database != value) {
+      _database = value;
       _resetPool();
     }
   }
@@ -166,17 +178,40 @@ class DatabaseService {
     }
   }
 
+  /// Scope identifier (`host:login:database`) used to isolate local settings per connection.
+  String get categoryStorageScope => '$_host:$_username:$_database';
+
+  String get _roleCategoriesPrefKey => 'role_categories_$categoryStorageScope';
+
+  Future<Map<String, String>> loadRoleCategories() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_roleCategoriesPrefKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+      }
+    } catch (_) {}
+    return {};
+  }
+
+  Future<void> _saveRoleCategories(Map<String, String> categories) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_roleCategoriesPrefKey, jsonEncode(categories));
+  }
+
   Future<void> _fetchCurrentUserInfo({bool forceRefresh = false}) async {
     if (!forceRefresh && _cachedCurrentUserOid != null && _cachedCanSetCategoryParameter != null) return;
     final pool = _getPool();
     final result = await pool.execute(
-      "SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role, has_parameter_privilege('dbroles.category', 'SET') AS can_set_category FROM pg_roles WHERE rolname = current_user",
+      'SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role FROM pg_roles WHERE rolname = current_user',
     );
     if (result.isNotEmpty) {
       _cachedCurrentUserOid = result.first[0] as int;
       _cachedIsSuperuser = result.first[1] as bool;
       _cachedCanCreateRole = result.first[2] as bool;
-      _cachedCanSetCategoryParameter = result.first[3] as bool;
+      _cachedCanSetCategoryParameter = true;
     }
   }
 
@@ -191,8 +226,7 @@ class DatabaseService {
   }
 
   Future<bool> canCurrentUserSetCategoryParameter({bool forceRefresh = false}) async {
-    await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
-    return _cachedCanSetCategoryParameter ?? false;
+    return _cachedCanSetCategoryParameter ?? true;
   }
 
   Future<void> setupRoleAdmin(String adminName, String adminPass) async {
@@ -218,22 +252,22 @@ class DatabaseService {
       // 3. Set standard description
       await conn.execute('COMMENT ON ROLE $safeAdmin IS ${escapeLiteral('grant and revoke roles to users')}');
 
-      // 4. Grant SET on parameter dbroles.category to the admin account
-      await conn.execute('GRANT SET ON PARAMETER dbroles.category TO $safeAdmin');
-
-      // 5. Grant ADMIN OPTION on all non-login roles (groups)
-      // We skip system roles (pg_*) because some (like pg_database_owner) do not allow members.
+      // 4. Grant ADMIN OPTION on all non-login roles (groups)
+      // We skip system roles (pg_*, rds_*, cloudsql*, azure_*) because some do not allow members.
       final groupsResult = await conn.execute(
-        "SELECT rolname FROM pg_roles WHERE rolcanlogin = false AND rolname NOT LIKE 'pg_%'",
+        "SELECT rolname FROM pg_roles WHERE rolcanlogin = false AND rolname NOT LIKE 'pg_%' AND rolname NOT LIKE 'rds%' AND rolname NOT LIKE 'cloudsql%' AND rolname NOT LIKE 'azure_%'",
       );
       for (final row in groupsResult) {
         final groupName = row[0] as String;
-        await conn.execute('GRANT ${escapeIdentifier(groupName)} TO $safeAdmin WITH ADMIN OPTION');
+        try {
+          await conn.execute('GRANT ${escapeIdentifier(groupName)} TO $safeAdmin WITH ADMIN OPTION');
+        } catch (_) {
+          // Ignore provider-managed roles that cannot be granted WITH ADMIN OPTION
+        }
       }
     });
 
     // Bulk update: easier to just re-fetch everything as many roles may have been affected
-    await _fetchCurrentUserInfo(forceRefresh: true);
     await fetchAllRoles(forceRefresh: true);
     _cachedGroupCatalog = null;
     _cachedUserMemberships.clear();
@@ -247,9 +281,6 @@ class DatabaseService {
   }
 
   Future<List<PgRole>> fetchAllRoles({bool forceRefresh = false}) async {
-    if (forceRefresh) {
-      clearCache();
-    }
     if (forceRefresh || _cachedRoles == null) {
       _cachedRoles = await _queryRoles(forceRefresh: forceRefresh);
       final current = _cachedRoles!.where((r) => r.isCurrent).firstOrNull;
@@ -257,6 +288,7 @@ class DatabaseService {
         _cachedCurrentUserOid = current.oid;
         _cachedIsSuperuser = current.isSuperuser;
         _cachedCanCreateRole = current.isSuperuser || current.createRole;
+        _cachedCanSetCategoryParameter = true;
       }
     }
     return _cachedRoles!;
@@ -384,85 +416,51 @@ class DatabaseService {
           pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
           '{}'::text[] AS grantors,
           (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-          false AS granted,
-          NULLIF(
-              btrim((
-                  SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                  FROM unnest(g.rolconfig) AS cfg
-                  WHERE cfg LIKE 'dbroles.category=%'
-                  LIMIT 1
-              )),
-              ''
-          ) AS category
+          false AS granted
       FROM pg_catalog.pg_roles g
       LEFT JOIN pg_catalog.pg_auth_members me
           ON g.oid = me.roleid
          AND me.member = CURRENT_USER::regrole::oid
          AND me.admin_option = true
       WHERE NOT g.rolcanlogin
-      GROUP BY g.oid, g.rolname, g.rolconfig
-      ORDER BY
-          (CASE 
-              WHEN split_part(
-                  NULLIF(btrim((
-                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                      FROM unnest(g.rolconfig) AS cfg
-                      WHERE cfg LIKE 'dbroles.category=%'
-                      LIMIT 1
-                  )), ''),
-                  ':', 2
-              ) ~ '^[0-9]+$'
-              THEN split_part(
-                  NULLIF(btrim((
-                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                      FROM unnest(g.rolconfig) AS cfg
-                      WHERE cfg LIKE 'dbroles.category=%'
-                      LIMIT 1
-                  )), ''),
-                  ':', 2
-              )::int
-          END) ASC NULLS LAST,
-          LOWER(NULLIF(
-              split_part(
-                  btrim((
-                      SELECT substring(cfg FROM '^dbroles\.category=(.*)$')
-                      FROM unnest(g.rolconfig) AS cfg
-                      WHERE cfg LIKE 'dbroles.category=%'
-                      LIMIT 1
-                  )),
-                  ':', 1
-              ),
-              ''
-          )) ASC NULLS LAST,
-          LOWER(g.rolname) ASC;
+      GROUP BY g.oid, g.rolname
+      ORDER BY LOWER(g.rolname) ASC;
       ''',
     );
 
-    _cachedGroupCatalog = result.map((row) => PgUserGroup.fromRow(row)).toList();
+    final categories = await loadRoleCategories();
+    final groups = result.map((row) {
+      final group = PgUserGroup.fromRow(row);
+      final cat = categories[group.name];
+      return cat != null ? group.copyWith(category: cat) : group;
+    }).toList();
+    groups.sort(compareGroups);
+
+    _cachedGroupCatalog = groups;
     return _cachedGroupCatalog!;
   }
 
-  List<String> _parseGrantors(dynamic rawGrantors) {
-    if (rawGrantors is List) {
-      return rawGrantors
-          .where((e) => e != null)
-          .map((e) => e.toString().trim())
-          .where((s) => s.isNotEmpty)
-          .toList();
-    } else if (rawGrantors is String) {
-      var str = rawGrantors.trim();
-      if (str.startsWith('{') && str.endsWith('}')) {
-        str = str.substring(1, str.length - 1).trim();
-        if (str.isNotEmpty) {
-          return str
-              .split(',')
-              .map((s) => s.replaceAll('"', '').trim())
-              .where((s) => s.isNotEmpty)
-              .toList();
-        }
-      }
+  static int compareGroups(PgUserGroup a, PgUserGroup b) {
+    final orderA = a.categoryOrder;
+    final orderB = b.categoryOrder;
+    if (orderA != null && orderB != null && orderA != orderB) {
+      return orderA.compareTo(orderB);
+    } else if (orderA != null && orderB == null) {
+      return -1;
+    } else if (orderA == null && orderB != null) {
+      return 1;
     }
-    return [];
+    final catA = a.categoryName?.toLowerCase();
+    final catB = b.categoryName?.toLowerCase();
+    if (catA != null && catB != null) {
+      final cmp = catA.compareTo(catB);
+      if (cmp != 0) return cmp;
+    } else if (catA != null) {
+      return -1;
+    } else if (catB != null) {
+      return 1;
+    }
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }
 
   Future<Map<int, ({bool granted, List<String> grantors})>> _fetchUserMemberships(
@@ -495,7 +493,7 @@ class DatabaseService {
     for (final row in result) {
       final roleOid = row[0] as int;
       final granted = (row[1] as bool?) ?? false;
-      final grantors = _parseGrantors(row[2]);
+      final grantors = PgUserGroup.parseGrantors(row[2]);
       memberships[roleOid] = (granted: granted, grantors: grantors);
     }
 
@@ -508,8 +506,10 @@ class DatabaseService {
   }
 
   Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
-    final catalog = await _fetchGroupCatalog(forceRefresh: forceRefresh);
-    final memberships = await _fetchUserMemberships(userOid, forceRefresh: forceRefresh);
+    final (catalog, memberships) = await (
+      _fetchGroupCatalog(forceRefresh: forceRefresh),
+      _fetchUserMemberships(userOid, forceRefresh: forceRefresh),
+    ).wait;
 
     return catalog.map((group) {
       final membership = memberships[group.oid];
@@ -521,37 +521,50 @@ class DatabaseService {
   }
 
   Future<void> setRoleCategory(String roleName, String? category) async {
-    final pool = _getPool();
+    final categories = await loadRoleCategories();
     final trimmed = category?.trim();
     if (trimmed != null && trimmed.isNotEmpty) {
-      await pool.execute(
-        'ALTER ROLE ${escapeIdentifier(roleName)} SET dbroles.category = ${escapeLiteral(trimmed)}',
-      );
+      categories[roleName] = trimmed;
     } else {
-      await pool.execute(
-        'ALTER ROLE ${escapeIdentifier(roleName)} RESET dbroles.category',
-      );
+      categories.remove(roleName);
     }
+    await _saveRoleCategories(categories);
     _cachedGroupCatalog = null;
   }
 
   Future<void> updateCategoryForRoles(Iterable<String> roleNames, String? newCategory) async {
+    final categories = await loadRoleCategories();
+    final trimmed = newCategory?.trim();
     for (final roleName in roleNames) {
-      await setRoleCategory(roleName, newCategory);
+      if (trimmed != null && trimmed.isNotEmpty) {
+        categories[roleName] = trimmed;
+      } else {
+        categories.remove(roleName);
+      }
     }
+    await _saveRoleCategories(categories);
+    _cachedGroupCatalog = null;
+  }
+
+  Future<void> updateCategoriesBatch(Map<String, String?> updates) async {
+    if (updates.isEmpty) return;
+    final categories = await loadRoleCategories();
+    for (final entry in updates.entries) {
+      final trimmed = entry.value?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) {
+        categories[entry.key] = trimmed;
+      } else {
+        categories.remove(entry.key);
+      }
+    }
+    await _saveRoleCategories(categories);
+    _cachedGroupCatalog = null;
   }
 
   Future<void> grantRole(String userName, String roleName, {int? userOid}) async {
     final pool = _getPool();
     // DDL statements like GRANT cannot use parameters for identifiers ($1)
     await pool.execute('GRANT ${escapeIdentifier(roleName)} TO ${escapeIdentifier(userName)}');
-    
-    // Update Role cache: permissions might have changed
-    final updatedRole = await fetchRoleByName(roleName, fromCache: false);
-    if (updatedRole != null && _cachedRoles != null) {
-      final index = _cachedRoles!.indexWhere((r) => r.name == roleName);
-      if (index != -1) _cachedRoles![index] = updatedRole;
-    }
 
     if (userOid != null && _cachedUserMemberships.containsKey(userOid) && _cachedGroupCatalog != null) {
       final group = _cachedGroupCatalog!.where((g) => g.name == roleName).firstOrNull;
@@ -570,13 +583,6 @@ class DatabaseService {
   Future<void> revokeRole(String userName, String roleName, {int? userOid}) async {
     final pool = _getPool();
     await pool.execute('REVOKE ${escapeIdentifier(roleName)} FROM ${escapeIdentifier(userName)}');
-    
-    // Update Role cache
-    final updatedRole = await fetchRoleByName(roleName, fromCache: false);
-    if (updatedRole != null && _cachedRoles != null) {
-      final index = _cachedRoles!.indexWhere((r) => r.name == roleName);
-      if (index != -1) _cachedRoles![index] = updatedRole;
-    }
 
     if (userOid != null && _cachedUserMemberships.containsKey(userOid) && _cachedGroupCatalog != null) {
       final group = _cachedGroupCatalog!.where((g) => g.name == roleName).firstOrNull;
@@ -602,6 +608,11 @@ class DatabaseService {
       _cachedRoles?.removeWhere((r) => r.name == name);
       _cachedGroupCatalog = null;
       _cachedUserMemberships.clear();
+    }
+
+    final categories = await loadRoleCategories();
+    if (categories.remove(name) != null) {
+      await _saveRoleCategories(categories);
     }
   }
 

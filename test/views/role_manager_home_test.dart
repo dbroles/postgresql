@@ -156,11 +156,11 @@ void main() {
       // Verify wide layout prompt
       expect(find.text('Select a user to manage roles'), findsOneWidget);
 
-      // Verify ConnectionStatusBar shows cluster name and SSL
+      // Verify ConnectionStatusBar shows cluster name and SSL lock icon
       expect(find.byType(ConnectionStatusBar), findsOneWidget);
       expect(find.byIcon(Icons.dns), findsOneWidget);
       expect(find.textContaining('prod_cluster_01'), findsOneWidget);
-      expect(find.textContaining('with ssl'), findsOneWidget);
+      expect(find.byIcon(Icons.lock), findsOneWidget);
     });
   });
 
