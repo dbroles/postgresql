@@ -359,7 +359,7 @@ class DatabaseService {
               me.can_create
           FROM pg_catalog.pg_roles r
           CROSS JOIN me
-          ${name != null ? 'WHERE r.rolname = \$1' : 'WHERE r.rolcanlogin'}
+          ${name != null ? 'WHERE r.rolname = \$1' : ''}
       )
       SELECT
           oid,

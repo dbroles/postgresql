@@ -49,6 +49,7 @@ Free code signing on Windows provided by [SignPath.io](https://signpath.io/), ce
 - **Committers & Reviewers:** [dbroles team](https://github.com/dbroles)
 - **Approvers:** [dbroles](https://github.com/dbroles)
 - **Privacy Policy:** This program will not transfer any information to other networked systems unless specifically requested by the user (connecting to the user-configured PostgreSQL database). See [PRIVACY.md](PRIVACY.md) for full details.
+- **Terms of Service:** See [TERMS.md](TERMS.md) for the Terms of Service governing the use of this application.
 
 ## Running from Source
 
