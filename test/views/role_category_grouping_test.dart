@@ -6,6 +6,7 @@ import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/models/pg_user_group.dart';
 import 'package:user_manager/views/role_management_widget.dart';
 import 'package:user_manager/views/role_manager_home.dart';
+import 'package:user_manager/views/add_role_category_dialog.dart';
 import 'package:user_manager/views/edit_role_category_dialog.dart';
 
 import '../fakes/fake_database_service.dart';
@@ -1373,6 +1374,89 @@ void main() {
 
       final stagingGroups = await dbStaging.fetchGroupsForUser(sampleUser.oid);
       expect(stagingGroups.firstWhere((g) => g.name == 'hr').category, isNull);
+    });
+
+    testWidgets('AddRoleCategoryDialog renders without overflow on a small 7-inch Android tablet (landscape and with keyboard)', (WidgetTester tester) async {
+      // Simulate a small 7-inch tablet in landscape (e.g., 800x480 dp)
+      tester.view.physicalSize = const Size(800, 480);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetViewInsets();
+      });
+
+      final roles = [
+        PgRole(oid: 201, name: 'adm', canLogin: false, description: 'Admin role'),
+        PgRole(oid: 202, name: 'hr', canLogin: false, description: 'Human Resources'),
+        PgRole(oid: 203, name: 'mktg', canLogin: false, description: 'Marketing'),
+        PgRole(oid: 204, name: 'bel', canLogin: false, description: 'Belgium'),
+        PgRole(oid: 205, name: 'nld', canLogin: false, description: 'Netherlands'),
+      ];
+
+      AddRoleCategoryResult? savedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  savedResult = await showDialog<AddRoleCategoryResult>(
+                    context: context,
+                    builder: (_) => AddRoleCategoryDialog(
+                      availableRoles: roles,
+                      defaultOrder: 1,
+                    ),
+                  );
+                },
+                child: const Text('Open Add Category'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Open Add Category'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Simulate on-screen keyboard opening on Android (leaving very little vertical space)
+      tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      final nameField = find.widgetWithText(TextField, 'Category Name');
+      expect(nameField, findsOneWidget);
+      await tester.enterText(nameField, 'region');
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // Dismiss keyboard and verify roles are visible and scrollable into view
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // First role is immediately visible onstage without scrolling even on 800x480
+      expect(find.widgetWithText(CheckboxListTile, 'adm'), findsOneWidget);
+
+      // Scroll down to the 5th role ('nld') and select it
+      final nldTileOffstage = find.widgetWithText(CheckboxListTile, 'nld', skipOffstage: false);
+      await tester.ensureVisible(nldTileOffstage);
+      await tester.pumpAndSettle();
+
+      final nldTile = find.widgetWithText(CheckboxListTile, 'nld');
+      expect(nldTile, findsOneWidget);
+      await tester.tap(nldTile);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(savedResult, isNotNull);
+      expect(savedResult!.category, 'region:1');
+      expect(savedResult!.assignedRoleNames, contains('nld'));
     });
   });
 }

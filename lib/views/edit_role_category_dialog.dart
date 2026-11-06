@@ -43,6 +43,7 @@ class EditRoleCategoryDialog extends StatefulWidget {
 }
 
 class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
+  final GlobalKey _headerSectionKey = GlobalKey();
   late final TextEditingController _nameController;
   late final TextEditingController _colorController;
   late final TextEditingController _searchController;
@@ -172,10 +173,12 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
     }).toList();
   }
 
-  Widget _buildPresetColorDots(ThemeData theme) {
+  Widget _buildPresetColorDots(ThemeData theme, {bool isCompactHeight = false}) {
+    final dotSize = isCompactHeight ? 24.0 : 28.0;
+    final spacing = isCompactHeight ? 6.0 : 8.0;
     return Wrap(
-      spacing: 8.0,
-      runSpacing: 8.0,
+      spacing: spacing,
+      runSpacing: spacing,
       children: _presetColors.map((preset) {
         final colorVal = int.parse('FF${preset.hex}', radix: 16);
         final isSelected = _colorController.text.trim().toLowerCase() == preset.hex.toLowerCase();
@@ -187,8 +190,8 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
           },
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            width: 28,
-            height: 28,
+            width: dotSize,
+            height: dotSize,
             decoration: BoxDecoration(
               color: Color(colorVal),
               shape: BoxShape.circle,
@@ -198,7 +201,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
               ),
             ),
             child: isSelected
-                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                ? Icon(Icons.check, size: isCompactHeight ? 14 : 16, color: Colors.white)
                 : null,
           ),
         );
@@ -206,28 +209,157 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
     );
   }
 
-  Widget _buildRoleListSection(ThemeData theme) {
-    final grantable = _grantableRoles;
-    final filtered = _getFilteredRoles(grantable);
-    final allFilteredSelected = filtered.isNotEmpty &&
-        filtered.every((r) => _selectedRoleNames.contains(r.name));
+  Widget _buildRoleTile(ThemeData theme, PgUserGroup role) {
+    final isSelected = _selectedRoleNames.contains(role.name);
+    final otherCat = role.categoryName ?? role.category;
+    final currentCatName = _nameController.text.trim();
+    final hasOtherCategory = otherCat != null &&
+        otherCat.isNotEmpty &&
+        (currentCatName.isEmpty || otherCat.toLowerCase() != currentCatName.toLowerCase());
 
-    final allCount = grantable.length;
-    var inCatCount = 0;
-    var ungroupedCount = 0;
-    for (final r in grantable) {
-      if (_selectedRoleNames.contains(r.name)) {
-        inCatCount++;
-      }
-      if (r.category == null || r.category!.trim().isEmpty) {
-        ungroupedCount++;
-      }
-    }
+    return CheckboxListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      value: isSelected,
+      onChanged: (val) {
+        setState(() {
+          if (val == true) {
+            _selectedRoleNames.add(role.name);
+          } else {
+            _selectedRoleNames.remove(role.name);
+          }
+        });
+      },
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              role.name,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (hasOtherCategory)
+            Flexible(
+              flex: 0,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: Container(
+                  margin: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    'In "$otherCat"',
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
+                  ),
+                ),
+              ),
+            )
+          else if (role.category == null || role.category!.trim().isEmpty)
+            Container(
+              margin: const EdgeInsets.only(left: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                'Ungrouped',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontSize: 10,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+      subtitle: role.description != null && role.description!.isNotEmpty
+          ? Text(
+              role.description!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+            )
+          : null,
+    );
+  }
 
+  Widget _buildHeaderSection(
+    ThemeData theme, {
+    required String dialogSubtitle,
+    required String currentName,
+    required int allCount,
+    required int inCatCount,
+    required int ungroupedCount,
+    required bool allFilteredSelected,
+    required List<PgUserGroup> filtered,
+    required bool isCompactHeight,
+  }) {
     return Column(
+      key: _headerSectionKey,
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Divider(height: 24),
+        Text(
+          dialogSubtitle,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        SizedBox(height: isCompactHeight ? 4 : 12),
+        // Name and Color inputs (on separate rows)
+        TextField(
+          controller: _nameController,
+          autofocus: currentName.isEmpty && !isCompactHeight,
+          decoration: InputDecoration(
+            labelText: 'Category Name',
+            hintText: 'e.g. department, country',
+            border: const OutlineInputBorder(),
+            isDense: true,
+            visualDensity: isCompactHeight ? VisualDensity.compact : null,
+            contentPadding: isCompactHeight
+                ? const EdgeInsets.symmetric(vertical: 6, horizontal: 10)
+                : null,
+            suffixIcon: _nameController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    tooltip: 'Clear name',
+                    onPressed: () => setState(() => _nameController.clear()),
+                  )
+                : null,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        SizedBox(height: isCompactHeight ? 6 : 10),
+        TextField(
+          controller: _colorController,
+          decoration: InputDecoration(
+            labelText: 'Color Hex',
+            hintText: 'e.g. 88AA00',
+            prefixText: '#',
+            border: const OutlineInputBorder(),
+            isDense: true,
+            visualDensity: isCompactHeight ? VisualDensity.compact : null,
+            contentPadding: isCompactHeight
+                ? const EdgeInsets.symmetric(vertical: 6, horizontal: 10)
+                : null,
+            suffixIcon: _colorController.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    tooltip: 'Clear color',
+                    onPressed: () => setState(() => _colorController.clear()),
+                  )
+                : null,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        SizedBox(height: isCompactHeight ? 4 : 10),
+        _buildPresetColorDots(theme, isCompactHeight: isCompactHeight),
+        Divider(height: isCompactHeight ? 8 : 24),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -239,6 +371,14 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
               ),
             ),
             TextButton(
+              style: isCompactHeight
+                  ? TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      minimumSize: Size.zero,
+                    )
+                  : null,
               onPressed: filtered.isEmpty
                   ? null
                   : () {
@@ -256,7 +396,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        SizedBox(height: isCompactHeight ? 2 : 6),
         // Search TextField (searches name & description)
         TextField(
           controller: _searchController,
@@ -274,13 +414,17 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                 : null,
             border: const OutlineInputBorder(),
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            visualDensity: isCompactHeight ? VisualDensity.compact : null,
+            contentPadding: EdgeInsets.symmetric(
+              vertical: isCompactHeight ? 4 : 8,
+              horizontal: 10,
+            ),
           ),
           onChanged: (val) {
             setState(() => _searchQuery = val);
           },
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: isCompactHeight ? 4 : 8),
         // Filter Segments
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -288,6 +432,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
             children: [
               ChoiceChip(
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: isCompactHeight ? MaterialTapTargetSize.shrinkWrap : null,
                 label: Text('All ($allCount)'),
                 selected: _selectedSegment == RoleCategoryFilterSegment.all,
                 onSelected: (_) => setState(() => _selectedSegment = RoleCategoryFilterSegment.all),
@@ -295,6 +440,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
               const SizedBox(width: 8),
               ChoiceChip(
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: isCompactHeight ? MaterialTapTargetSize.shrinkWrap : null,
                 label: Text('In Category ($inCatCount)'),
                 selected: _selectedSegment == RoleCategoryFilterSegment.inCategory,
                 onSelected: (_) => setState(() => _selectedSegment = RoleCategoryFilterSegment.inCategory),
@@ -302,6 +448,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
               const SizedBox(width: 8),
               ChoiceChip(
                 visualDensity: VisualDensity.compact,
+                materialTapTargetSize: isCompactHeight ? MaterialTapTargetSize.shrinkWrap : null,
                 label: Text('Ungrouped ($ungroupedCount)'),
                 selected: _selectedSegment == RoleCategoryFilterSegment.ungrouped,
                 onSelected: (_) => setState(() => _selectedSegment = RoleCategoryFilterSegment.ungrouped),
@@ -309,101 +456,115 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
             ],
           ),
         ),
-        const SizedBox(height: 8),
-        // Virtualized ListView of filtered roles
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: filtered.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        'No matching roles found',
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        SizedBox(height: isCompactHeight ? 4 : 8),
+      ],
+    );
+  }
+
+  Widget _buildRoleAssignmentContent(
+    ThemeData theme, {
+    required String dialogSubtitle,
+    required String currentName,
+    required bool isCompactHeight,
+    required double textScale,
+  }) {
+    final grantable = _grantableRoles;
+    final filtered = _getFilteredRoles(grantable);
+    final allFilteredSelected = filtered.isNotEmpty &&
+        filtered.every((r) => _selectedRoleNames.contains(r.name));
+
+    final allCount = grantable.length;
+    var inCatCount = 0;
+    var ungroupedCount = 0;
+    for (final r in grantable) {
+      if (_selectedRoleNames.contains(r.name)) {
+        inCatCount++;
+      }
+      if (r.category == null || r.category!.trim().isEmpty) {
+        ungroupedCount++;
+      }
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final headerSection = _buildHeaderSection(
+          theme,
+          dialogSubtitle: dialogSubtitle,
+          currentName: currentName,
+          allCount: allCount,
+          inCatCount: inCatCount,
+          ungroupedCount: ungroupedCount,
+          allFilteredSelected: allFilteredSelected,
+          filtered: filtered,
+          isCompactHeight: isCompactHeight,
+        );
+
+        final borderDecoration = BoxDecoration(
+          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(8),
+        );
+
+        final minPinnedHeight = (isCompactHeight ? 450.0 : 520.0) * textScale;
+        final useScrollableLayout = constraints.maxHeight < minPinnedHeight;
+
+        if (useScrollableLayout) {
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: headerSection),
+              if (filtered.isEmpty)
+                SliverToBoxAdapter(
+                  child: Container(
+                    decoration: borderDecoration,
+                    padding: const EdgeInsets.all(16.0),
+                    alignment: Alignment.center,
+                    child: Text(
+                      'No matching roles found',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) {
-                      final role = filtered[index];
-                      final isSelected = _selectedRoleNames.contains(role.name);
-                      final otherCat = role.categoryName ?? role.category;
-                      final currentCatName = _nameController.text.trim();
-                      final hasOtherCategory = otherCat != null &&
-                          otherCat.isNotEmpty &&
-                          (currentCatName.isEmpty || otherCat.toLowerCase() != currentCatName.toLowerCase());
-
-                      return CheckboxListTile(
-                        dense: true,
-                        value: isSelected,
-                        onChanged: (val) {
-                          setState(() {
-                            if (val == true) {
-                              _selectedRoleNames.add(role.name);
-                            } else {
-                              _selectedRoleNames.remove(role.name);
-                            }
-                          });
-                        },
-                        title: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                role.name,
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (hasOtherCategory)
-                              Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'In "$otherCat"',
-                                  style: theme.textTheme.labelSmall?.copyWith(fontSize: 10),
-                                ),
-                              )
-                            else if (role.category == null || role.category!.trim().isEmpty)
-                              Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  'Ungrouped',
-                                  style: theme.textTheme.labelSmall?.copyWith(
-                                    fontSize: 10,
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        subtitle: role.description != null && role.description!.isNotEmpty
-                            ? Text(
-                                role.description!,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
-                              )
-                            : null,
-                      );
-                    },
                   ),
-          ),
-        ),
-      ],
+                )
+              else
+                DecoratedSliver(
+                  decoration: borderDecoration,
+                  sliver: SliverList.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) => _buildRoleTile(theme, filtered[index]),
+                  ),
+                ),
+            ],
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            headerSection,
+            Expanded(
+              child: Container(
+                decoration: borderDecoration,
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'No matching roles found',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) => _buildRoleTile(theme, filtered[index]),
+                      ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -426,13 +587,31 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
 
     final mediaQuery = MediaQuery.of(context);
     final isNarrow = mediaQuery.size.width < 600;
+    final availableHeight =
+        mediaQuery.size.height - mediaQuery.viewInsets.bottom - mediaQuery.padding.vertical;
+    final isCompactHeight = mediaQuery.size.height < 700 || availableHeight < 650;
+    final textScale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 2.0);
     final dialogWidth = isNarrow ? mediaQuery.size.width * 0.95 : 540.0;
-    final dialogHeight = isNarrow ? mediaQuery.size.height * 0.85 : mediaQuery.size.height * 0.78;
+    final dialogHeight = isCompactHeight
+        ? mediaQuery.size.height * 0.92
+        : (isNarrow ? mediaQuery.size.height * 0.85 : mediaQuery.size.height * 0.78);
 
     return AlertDialog(
+      insetPadding: isCompactHeight
+          ? const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0)
+          : const EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0),
+      titlePadding: isCompactHeight
+          ? const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 0.0)
+          : null,
+      contentPadding: isCompactHeight
+          ? const EdgeInsets.fromLTRB(16.0, 8.0, 16.0, 8.0)
+          : null,
+      actionsPadding: isCompactHeight
+          ? const EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0)
+          : null,
       title: Row(
         children: [
-          Icon(Icons.category_outlined, color: previewColor),
+          Icon(Icons.category_outlined, color: previewColor, size: isCompactHeight ? 20 : 24),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -446,60 +625,12 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
         width: dialogWidth,
         height: hasRoles ? dialogHeight : null,
         child: hasRoles
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    dialogSubtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  // Name and Color inputs (on separate rows)
-                  TextField(
-                    controller: _nameController,
-                    autofocus: currentName.isEmpty,
-                    decoration: InputDecoration(
-                      labelText: 'Category Name',
-                      hintText: 'e.g. department, country',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: _nameController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              tooltip: 'Clear name',
-                              onPressed: () => setState(() => _nameController.clear()),
-                            )
-                          : null,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(
-                    controller: _colorController,
-                    decoration: InputDecoration(
-                      labelText: 'Color Hex',
-                      hintText: 'e.g. 88AA00',
-                      prefixText: '#',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: _colorController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear, size: 18),
-                              tooltip: 'Clear color',
-                              onPressed: () => setState(() => _colorController.clear()),
-                            )
-                          : null,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildPresetColorDots(theme),
-                  Expanded(
-                    child: _buildRoleListSection(theme),
-                  ),
-                ],
+            ? _buildRoleAssignmentContent(
+                theme,
+                dialogSubtitle: dialogSubtitle,
+                currentName: currentName,
+                isCompactHeight: isCompactHeight,
+                textScale: textScale,
               )
             : SingleChildScrollView(
                 child: Column(
@@ -515,7 +646,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                     const SizedBox(height: 16),
                     TextField(
                       controller: _nameController,
-                      autofocus: true,
+                      autofocus: !isCompactHeight,
                       decoration: InputDecoration(
                         labelText: 'Category Name',
                         hintText: 'e.g. department, country',
@@ -558,7 +689,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    _buildPresetColorDots(theme),
+                    _buildPresetColorDots(theme, isCompactHeight: isCompactHeight),
                     if (widget.existingCategories.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       Text(

@@ -1022,8 +1022,8 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         Expanded(
           child: sortedCategoryNames.isEmpty
               ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 40.0),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1034,6 +1034,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         Text(
                           'Tap "New Category" to organize your roles into groups.',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ),
