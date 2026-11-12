@@ -1,48 +1,26 @@
-import 'dart:ui';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 import '../services/database_service.dart';
 import 'role_management_widget.dart';
 
-class RoleMembershipPage extends StatefulWidget {
-  final PgRole user;
-  final List<PgUserGroup> groups;
-  final Future<void> Function(PgUserGroup, bool) onToggleRole;
-  final TextEditingController roleSearchController;
-  final bool showSystemRoles;
-  final bool showUngrantableRoles;
-  final bool showDescriptions;
-  final bool showFilters;
-  final String currentUsername;
-  final bool isDeletable;
-  final Function(PgRole) onDeletePressed;
-  final Future<PgRole?> Function(PgRole)? onEditPressed;
-  final Future<PgRole?> Function(PgRole, List<PgUserGroup>)? onDuplicatePressed;
-  final DatabaseService? dbService;
-  final Future<void> Function()? onRefresh;
-  final List<String> categoryTemplates;
-
-  const RoleMembershipPage({
-    super.key,
-    required this.user,
-    required this.groups,
-    required this.onToggleRole,
-    this.categoryTemplates = const [],
-    required this.roleSearchController,
-    required this.showSystemRoles,
-    this.showUngrantableRoles = false,
-    required this.showDescriptions,
-    required this.showFilters,
-    required this.currentUsername,
-    required this.isDeletable,
-    required this.onDeletePressed,
-    this.onEditPressed,
-    this.onDuplicatePressed,
-    this.dbService,
-    this.onRefresh,
-  });
+class const RoleMembershipPage({
+  super.key,
+  required final PgRole user,
+  required final List<PgUserGroup> groups,
+  required final Future<void> Function(PgUserGroup, bool) onToggleRole,
+  final List<String> categoryTemplates = const [],
+  required final TextEditingController roleSearchController,
+  required final bool showDescriptions,
+  required final bool showFilters,
+  required final String currentUsername,
+  required final Function(PgRole) onDeletePressed,
+  final Future<PgRole?> Function(PgRole)? onEditPressed,
+  final Future<PgRole?> Function(PgRole, List<PgUserGroup>)? onDuplicatePressed,
+  final DatabaseService? dbService,
+  final Future<void> Function()? onRefresh,
+}) extends StatefulWidget {
 
   @override
   State<RoleMembershipPage> createState() => _RoleMembershipPageState();
@@ -196,6 +174,17 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Theme.of(context).colorScheme.onPrimary,
         actions: [
+          IconButton(
+            icon: Icon(_showFilters ? Icons.search_off : Icons.search),
+            tooltip: _showFilters ? 'Hide Filters' : 'Search',
+            onPressed: () {
+              if (_showFilters) {
+                _handleEscape();
+              } else {
+                _activateSearchFilters();
+              }
+            },
+          ),
           if (widget.onEditPressed != null && _currentUser.isAdmin)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
@@ -208,7 +197,7 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
               tooltip: 'Duplicate User',
               onPressed: _handleDuplicateUser,
             ),
-          if (widget.isDeletable)
+          if (_currentUser.canDrop)
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Delete User',
@@ -219,10 +208,10 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
       body: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
           dragDevices: {
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.trackpad,
-            PointerDeviceKind.stylus,
+            .touch,
+            .mouse,
+            .trackpad,
+            .stylus,
           },
         ),
         child: RoleManagementWidget(
@@ -233,8 +222,6 @@ class _RoleMembershipPageState extends State<RoleMembershipPage> {
           isLoading: false,
           roleSearchController: widget.roleSearchController,
           roleSearchFocusNode: _roleSearchFocusNode,
-          showSystemRoles: widget.showSystemRoles,
-          showUngrantableRoles: widget.showUngrantableRoles,
           showDescriptions: widget.showDescriptions,
           showFilters: _showFilters,
           currentUsername: widget.currentUsername,

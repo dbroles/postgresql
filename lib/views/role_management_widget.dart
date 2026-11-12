@@ -1,42 +1,24 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 
 enum RoleFilterSegment { all, assigned, available }
 
-class RoleManagementWidget extends StatefulWidget {
-  final PgRole user;
-  final List<PgUserGroup> groups;
-  final Future<void> Function(PgUserGroup, bool) onToggleRole;
-  final bool isLoading;
-  final TextEditingController roleSearchController;
-  final bool showSystemRoles;
-  final bool showUngrantableRoles;
-  final bool showDescriptions;
-  final bool showFilters;
-  final String currentUsername;
-  final FocusNode? roleSearchFocusNode;
-  final Future<void> Function()? onRefresh;
-  final List<String> categoryTemplates;
-
-  const RoleManagementWidget({
-    super.key,
-    required this.user,
-    required this.groups,
-    required this.onToggleRole,
-    this.categoryTemplates = const [],
-    required this.isLoading,
-    required this.roleSearchController,
-    this.roleSearchFocusNode,
-    required this.showSystemRoles,
-    this.showUngrantableRoles = false,
-    required this.showDescriptions,
-    required this.showFilters,
-    required this.currentUsername,
-    this.onRefresh,
-  });
-
+class const RoleManagementWidget({
+  super.key,
+  required final PgRole user,
+  required final List<PgUserGroup> groups,
+  required final Future<void> Function(PgUserGroup, bool) onToggleRole,
+  final List<String> categoryTemplates = const [],
+  required final bool isLoading,
+  required final TextEditingController roleSearchController,
+  final FocusNode? roleSearchFocusNode,
+  required final bool showDescriptions,
+  required final bool showFilters,
+  required final String currentUsername,
+  final Future<void> Function()? onRefresh,
+}) extends StatefulWidget {
   @override
   State<RoleManagementWidget> createState() => _RoleManagementWidgetState();
 }
@@ -45,7 +27,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
   static const String _ungroupedSectionKey = '__ungrouped__';
   static const String _collapsedCategoriesPrefKey = 'collapsedRoleCategories';
   String _roleSearchQuery = '';
-  RoleFilterSegment _selectedSegment = RoleFilterSegment.all;
+  RoleFilterSegment _selectedSegment = .all;
   final Set<String> _togglingRoleNames = {};
   final Set<String> _collapsedSections = {};
 
@@ -98,20 +80,14 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
   }
 
   Iterable<PgUserGroup> _getBaseFilteredGroups() {
-    Iterable<PgUserGroup> filtered = widget.groups;
-    if (!widget.showSystemRoles) {
-      filtered = filtered.where((r) => !r.name.startsWith('pg_'));
-    }
-    if (!widget.showUngrantableRoles) {
-      filtered = filtered.where((r) => r.grantable);
-    }
+    Iterable<PgUserGroup> filtered = widget.groups.where((r) => r.grantable);
     if (_roleSearchQuery.isNotEmpty) {
       final query = _roleSearchQuery.toLowerCase();
       filtered = filtered.where((r) {
         final matchesName = r.name.toLowerCase().contains(query);
         final matchesDescription = widget.showDescriptions &&
             (r.description?.toLowerCase().contains(query) ?? false);
-        final matchesCategory = (r.categoryName ?? r.category)?.toLowerCase().contains(query) ?? false;
+        final matchesCategory = r.effectiveCategoryName.toLowerCase().contains(query);
         return matchesName || matchesDescription || matchesCategory;
       });
     }
@@ -120,14 +96,11 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
 
   List<PgUserGroup> _filterGroups() {
     final base = _getBaseFilteredGroups();
-    switch (_selectedSegment) {
-      case RoleFilterSegment.all:
-        return base.toList();
-      case RoleFilterSegment.assigned:
-        return base.where(_isGroupAssigned).toList();
-      case RoleFilterSegment.available:
-        return base.where((g) => !_isGroupAssigned(g)).toList();
-    }
+    return switch (_selectedSegment) {
+      .all => base.toList(),
+      .assigned => base.where(_isGroupAssigned).toList(),
+      .available => base.where((g) => !_isGroupAssigned(g)).toList(),
+    };
   }
 
   Future<void> _handleToggleRole(PgUserGroup group) async {
@@ -150,7 +123,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     return SizedBox(
       width: 55, // Fixed width for consistent spacing
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: .min,
         children: [
           CircleAvatar(
             radius: 14,
@@ -160,7 +133,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
+                fontWeight: .bold,
               ),
             ),
           ),
@@ -168,9 +141,9 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
           Text(
             label,
             style: theme.textTheme.bodySmall?.copyWith(fontSize: 9),
-            textAlign: TextAlign.center,
+            textAlign: .center,
             maxLines: 1,
-            overflow: TextOverflow.visible,
+            overflow: .visible,
           ),
         ],
       ),
@@ -183,23 +156,23 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(4.0, 16.0, 16.0, 16.0),
+      padding: const .fromLTRB(4.0, 16.0, 16.0, 16.0),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
         border: Border(bottom: BorderSide(color: theme.dividerColor)),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: .start,
         children: [
           if (widget.showDescriptions && user.description != null && user.description!.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(left: 12.0, bottom: 12.0),
+              padding: const .only(left: 12.0, bottom: 12.0),
               child: Text.rich(
                 TextSpan(
                   children: [
                     const TextSpan(
                       text: 'Description: ',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: TextStyle(fontWeight: .bold),
                     ),
                     TextSpan(
                       text: user.description!,
@@ -210,7 +183,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
               ),
             ),
           SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+            scrollDirection: .horizontal,
             child: Row(
               children: [
                 _buildAttributeBall('Super', 'S', user.isSuperuser, theme),
@@ -239,23 +212,23 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
             Expanded(
               child: Text(
                 'Role "${group.name}"',
-                overflow: TextOverflow.ellipsis,
+                overflow: .ellipsis,
               ),
             ),
           ],
         ),
         content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: .min,
+          crossAxisAlignment: .start,
           children: [
             const Text(
               'Granted by:',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(fontWeight: .bold),
             ),
             const SizedBox(height: 8),
             ...group.grantors.map(
               (grantor) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                padding: const .symmetric(vertical: 4.0),
                 child: Row(
                   children: [
                     const Icon(Icons.person_outline, size: 16, color: Colors.grey),
@@ -290,14 +263,14 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     final tooltipMessage = 'Granted by:\n${group.grantors.map((g) => '• $g').join('\n')}';
 
     return Padding(
-      padding: const EdgeInsets.only(left: 6.0),
+      padding: const .only(left: 6.0),
       child: Tooltip(
         message: tooltipMessage,
         child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
+          behavior: .opaque,
           onTap: () => _showGrantorDetails(context, group),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2.0, vertical: 2.0),
+            padding: const .symmetric(horizontal: 2.0, vertical: 2.0),
             child: Icon(
               isMultiple ? Icons.people_outline : Icons.person_outline,
               size: 16,
@@ -315,22 +288,22 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     final availableCount = allCount - assignedCount;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
+      padding: const .symmetric(horizontal: 16.0, vertical: 6.0),
       child: SizedBox(
         width: double.infinity,
         child: SegmentedButton<RoleFilterSegment>(
           segments: [
             ButtonSegment<RoleFilterSegment>(
-              value: RoleFilterSegment.all,
-              label: Text('All ($allCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+              value: .all,
+              label: Text('All ($allCount)', overflow: .ellipsis, maxLines: 1),
             ),
             ButtonSegment<RoleFilterSegment>(
-              value: RoleFilterSegment.assigned,
-              label: Text('Assigned ($assignedCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+              value: .assigned,
+              label: Text('Assigned ($assignedCount)', overflow: .ellipsis, maxLines: 1),
             ),
             ButtonSegment<RoleFilterSegment>(
-              value: RoleFilterSegment.available,
-              label: Text('Available ($availableCount)', overflow: TextOverflow.ellipsis, maxLines: 1),
+              value: .available,
+              label: Text('Available ($availableCount)', overflow: .ellipsis, maxLines: 1),
             ),
           ],
           selected: {_selectedSegment},
@@ -339,8 +312,8 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
           },
           showSelectedIcon: false,
           style: const ButtonStyle(
-            visualDensity: VisualDensity.compact,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: .compact,
+            tapTargetSize: .shrinkWrap,
           ),
         ),
       ),
@@ -359,7 +332,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
               width: 24,
               height: 24,
               child: Padding(
-                padding: EdgeInsets.all(2.0),
+                padding: .all(2.0),
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             )
@@ -373,7 +346,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
             TextSpan(
               text: group.name,
               style: TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: .bold,
                 color: group.grantable ? null : Colors.grey.shade400,
               ),
             ),
@@ -389,13 +362,13 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
               ),
             if (group.grantors.isNotEmpty)
               WidgetSpan(
-                alignment: PlaceholderAlignment.middle,
+                alignment: .middle,
                 child: _buildGrantorBadge(context, group),
               ),
           ],
         ),
         maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+        overflow: .ellipsis,
       ),
       value: isChecked,
       onChanged: isInteractive ? (val) => _handleToggleRole(group) : null,
@@ -418,13 +391,13 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
       key: ValueKey('category_header_$sectionKey'),
       onTap: () => _toggleSectionCollapsed(sectionKey, isCollapsed),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+        padding: const .symmetric(horizontal: 16.0, vertical: 10.0),
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
           border: Border(
             left: color != null
                 ? BorderSide(color: color, width: 4.0)
-                : BorderSide.none,
+                : .none,
             bottom: BorderSide(color: theme.dividerColor.withValues(alpha: 0.5)),
           ),
         ),
@@ -438,34 +411,34 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
             const SizedBox(width: 8),
             Expanded(
               child: Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisSize: .min,
                 children: [
                   Flexible(
                     child: Text(
                       title,
                       style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
+                        fontWeight: .bold,
                         color: theme.colorScheme.onSurface,
                       ),
                       maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      overflow: .ellipsis,
                     ),
                   ),
                 ],
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 2.0),
+              padding: const .symmetric(horizontal: 8.0, vertical: 2.0),
               decoration: BoxDecoration(
                 color: assignedCount > 0
                     ? (color != null ? color.withValues(alpha: 0.15) : theme.colorScheme.primaryContainer)
                     : theme.colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: .circular(12),
               ),
               child: Text(
                 '$assignedCount / $totalCount',
                 style: theme.textTheme.labelSmall?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: .w600,
                   color: assignedCount > 0
                       ? (color ?? theme.colorScheme.onPrimaryContainer)
                       : theme.colorScheme.onSurfaceVariant,
@@ -486,14 +459,14 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
           const SizedBox(height: 60),
           Center(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisAlignment: .center,
               children: [
                 Icon(Icons.shield_outlined, size: 48, color: theme.disabledColor),
                 const SizedBox(height: 12),
                 Text(
-                  _selectedSegment == RoleFilterSegment.assigned
+                  _selectedSegment == .assigned
                       ? 'No assigned roles'
-                      : _selectedSegment == RoleFilterSegment.available
+                      : _selectedSegment == .available
                           ? 'No available roles'
                           : 'No roles found',
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -507,16 +480,7 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
       );
     }
 
-    final hasCategories = widget.groups.any((g) => g.category != null && g.category!.isNotEmpty);
-    if (!hasCategories) {
-      return ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: filteredGroups.length,
-        itemBuilder: (context, index) => _buildRoleTile(filteredGroups[index], theme),
-      );
-    }
-
-    // Build sections in single pass preserving PostgreSQL's ORDER BY
+    // Build sections in single pass preserving catalog ORDER BY
     final sectionOrder = <String>[];
     final sectionTitles = <String, String>{};
     final sectionColors = <String, Color?>{};
@@ -524,17 +488,17 @@ class _RoleManagementWidgetState extends State<RoleManagementWidget> {
     final sectionGroups = <String, List<PgUserGroup>>{};
 
     for (final group in filteredGroups) {
-      final isUngrouped = group.category == null || group.category!.isEmpty;
+      final isUngrouped = group.isDefaultUngrouped;
       final key = isUngrouped
           ? _ungroupedSectionKey
           : (group.categoryName?.toLowerCase() ?? group.category!.toLowerCase());
-      final title = isUngrouped ? 'Ungrouped' : (group.categoryName ?? group.category!);
+      final title = group.effectiveCategoryName;
 
       if (!sectionGroups.containsKey(key)) {
         sectionOrder.add(key);
         sectionTitles[key] = title;
-        sectionColors[key] = isUngrouped ? null : group.categoryColor;
-        sectionOrders[key] = isUngrouped ? null : group.categoryOrder;
+        sectionColors[key] = group.effectiveCategoryColor;
+        sectionOrders[key] = group.effectiveCategoryOrder;
         sectionGroups[key] = [];
       }
       sectionGroups[key]!.add(group);

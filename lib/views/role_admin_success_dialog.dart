@@ -1,8 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-class RoleAdminSuccessDialog extends StatelessWidget {
-  const RoleAdminSuccessDialog({super.key});
-
+class const RoleAdminSuccessDialog({super.key}) extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -14,11 +12,11 @@ class RoleAdminSuccessDialog extends StatelessWidget {
         ],
       ),
       content: const Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: .min,
         children: [
           Text(
             'The administrative account has been successfully configured with the necessary permissions.',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: TextStyle(fontWeight: .bold),
           ),
           SizedBox(height: 20),
           Text(

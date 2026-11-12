@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:user_manager/main.dart';
 import 'package:user_manager/models/pg_role.dart';
-import 'package:user_manager/models/pg_membership.dart';
 import 'package:user_manager/models/pg_user_group.dart';
 import 'package:user_manager/services/database_service.dart';
 import 'package:postgres/postgres.dart';
@@ -47,24 +46,13 @@ void main() {
       expect(role.canManage, true);
     });
 
-    test('PgMembership.fromRow correctly parses catalog row', () {
-      final row = [
-        100, // roleOid
-        200, // memberOid
-        'admin_user', // grantor
-        true, // adminOption
-        true, // inheritOption
-        false, // setOption
-      ];
-
-      final membership = PgMembership.fromRow(row);
-
-      expect(membership.roleOid, 100);
-      expect(membership.memberOid, 200);
-      expect(membership.grantor, 'admin_user');
-      expect(membership.adminOption, true);
-      expect(membership.inheritOption, true);
-      expect(membership.setOption, false);
+    test('PgUserGroup.parseCategory correctly parses name, order, and color with pattern matching', () {
+      final parsed = PgUserGroup.parseCategory('department:2:#34BB22');
+      expect(parsed.name, 'department');
+      expect(parsed.order, 2);
+      expect(parsed.colorHex, '34BB22');
+      expect(parsed.color?.toARGB32(), 0xFF34BB22);
+      expect(PgUserGroup.categoryKey('  Department:2:34BB22 '), 'department');
     });
 
     test('PgUserGroup.fromRow correctly parses query row with grantors', () {

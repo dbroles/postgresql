@@ -1,32 +1,20 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pg_role.dart';
 
-class UserListWidget extends StatefulWidget {
-  final List<PgRole> users;
-  final int? selectedUserOid;
-  final Function(PgRole) onUserSelected;
-  final TextEditingController searchController;
-  final FocusNode? searchFocusNode;
-  final String searchQuery;
-  final bool showFilters;
-  final bool showDescriptions;
-  final VoidCallback? onAddPressed;
-  final Future<void> Function()? onRefresh;
-
-  const UserListWidget({
-    super.key,
-    required this.users,
-    this.selectedUserOid,
-    required this.onUserSelected,
-    required this.searchController,
-    this.searchFocusNode,
-    required this.searchQuery,
-    required this.showFilters,
-    this.showDescriptions = false,
-    this.onAddPressed,
-    this.onRefresh,
-  });
+class const UserListWidget({
+  super.key,
+  required final List<PgRole> users,
+  final int? selectedUserOid,
+  required final Function(PgRole) onUserSelected,
+  required final TextEditingController searchController,
+  final FocusNode? searchFocusNode,
+  required final String searchQuery,
+  required final bool showFilters,
+  final bool showDescriptions = false,
+  final VoidCallback? onAddPressed,
+  final Future<void> Function()? onRefresh,
+}) extends StatefulWidget {
 
   @override
   State<UserListWidget> createState() => _UserListWidgetState();
@@ -77,10 +65,10 @@ class _UserListWidgetState extends State<UserListWidget> {
           ? Text(
               user.description!,
               maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              overflow: .ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
+                fontStyle: .italic,
               ),
             )
           : null,

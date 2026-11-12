@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -20,7 +20,7 @@ void main() {
     oid: 101,
     name: 'alice',
     canLogin: true,
-    isSuperuser: true,
+    isSuperuser: false,
     description: 'Lead Admin',
     inherit: true,
     createRole: true,
@@ -71,7 +71,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'alice',
@@ -108,7 +107,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'alice',
@@ -432,11 +430,9 @@ void main() {
               groups: sampleGroups,
               onToggleRole: (_, _) async {},
               roleSearchController: roleSearchController,
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'alice',
-              isDeletable: false,
               onDeletePressed: (_) {},
             ),
           ),
@@ -504,7 +500,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: roleSearchController,
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: true,
               currentUsername: 'alice',
@@ -548,7 +543,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: roleSearchController,
-              showSystemRoles: false,
               showDescriptions: false,
               showFilters: true,
               currentUsername: 'alice',

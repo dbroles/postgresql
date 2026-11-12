@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -149,7 +149,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'test_admin',
@@ -207,7 +206,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: searchController,
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: true,
               currentUsername: 'test_admin',
@@ -249,7 +247,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -305,47 +302,6 @@ void main() {
       expect(find.text('Ungrouped'), findsNothing);
     });
 
-    testWidgets('hides category edit buttons and settings toggle when user lacks dbroles.category SET privilege', (WidgetTester tester) async {
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(
-        roles: [sampleUser],
-        mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: false,
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Select user 'alice'
-      await tester.tap(find.text('alice'));
-      await tester.pumpAndSettle();
-
-      // Category headers are still visible
-      expect(find.text('department'), findsOneWidget);
-      expect(find.text('policy'), findsOneWidget);
-
-      // Edit category buttons must NOT be visible
-      expect(find.byTooltip('Set category'), findsNothing);
-      expect(find.byIcon(Icons.label), findsNothing);
-      expect(find.byIcon(Icons.label_outline), findsNothing);
-
-      // Open Settings modal -> 'Role Categories' tab should NOT be shown
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Role Categories'), findsNothing);
-    });
-
     testWidgets('Role rows do not show category edit buttons, keeping the main view clean', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -357,7 +313,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -395,7 +350,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'test_admin',
@@ -424,7 +378,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: false,
               currentUsername: 'test_admin',
@@ -669,7 +622,6 @@ void main() {
               isLoading: false,
               roleSearchController: TextEditingController(),
               roleSearchFocusNode: FocusNode(),
-              showSystemRoles: false,
               showDescriptions: true,
               showFilters: true,
               currentUsername: 'test_admin',
@@ -750,7 +702,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -774,11 +725,16 @@ void main() {
       expect(find.text('New Category'), findsOneWidget);
       expect(find.text('department'), findsOneWidget);
       expect(find.text('policy'), findsOneWidget);
+      // Default Ungrouped (#88AA00) category card is shown when ungrouped roles exist
+      expect(find.text('Ungrouped'), findsOneWidget);
+      // Edit and Drag are available for all 3 categories (department, policy, Ungrouped),
+      // while Delete is only available for the 2 custom categories (not Ungrouped)
+      expect(find.byTooltip('Edit Category'), findsNWidgets(3));
+      expect(find.byTooltip('Delete Category'), findsNWidgets(2));
+      expect(find.byIcon(Icons.drag_handle), findsNWidgets(3));
       // Clean circles with no order numbers or pills
       expect(find.text('#1'), findsNothing);
       expect(find.text('#2'), findsNothing);
-      // Ungrouped summary is not shown
-      expect(find.textContaining('Ungrouped'), findsNothing);
       // Subtitle with member roles list is not shown
       expect(find.textContaining('roles:'), findsNothing);
       expect(find.textContaining('roles assigned'), findsNothing);
@@ -795,7 +751,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -852,7 +807,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -896,7 +850,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -948,7 +901,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: categorizedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -1032,7 +984,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: countryRoles},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -1145,7 +1096,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: manyGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -1225,7 +1175,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: mixedGrantableRoles},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -1296,7 +1245,6 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: [sampleUser],
         mockUserGroups: {sampleUser.oid: mixedGroups},
-        canSetCategoryParameterResult: true,
       );
 
       await tester.pumpWidget(
@@ -1457,6 +1405,116 @@ void main() {
       expect(savedResult, isNotNull);
       expect(savedResult!.category, 'region:1');
       expect(savedResult!.assignedRoleNames, contains('nld'));
+    });
+
+    testWidgets('Default Ungrouped (#88AA00) section renders when 0 custom categories exist, can be edited/renamed, and hides when all roles are grouped', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final ungroupedOnlyRoles = [
+        PgUserGroup(
+          oid: 701,
+          name: 'role_alpha',
+          granted: true,
+          grantable: true,
+          grantors: [],
+        ),
+        PgUserGroup(
+          oid: 702,
+          name: 'role_beta',
+          granted: false,
+          grantable: true,
+          grantors: [],
+        ),
+      ];
+
+      final fakeDb = FakeDatabaseService(
+        roles: [sampleUser],
+        mockUserGroups: {sampleUser.oid: ungroupedOnlyRoles},
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Select user 'alice'
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      // Even with 0 custom categories, 'Ungrouped' section header is shown with 1 / 2 badge
+      expect(find.byKey(const ValueKey('category_header___ungrouped__')), findsOneWidget);
+      expect(find.text('Ungrouped'), findsOneWidget);
+      expect(find.text('1 / 2'), findsOneWidget);
+
+      // Open Settings -> Role Categories
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Role Categories'));
+      await tester.pumpAndSettle();
+
+      // 'Ungrouped' card is shown with Edit and Drag, but NO Delete button
+      expect(find.byKey(const ValueKey('__ungrouped__')), findsOneWidget);
+      expect(find.byTooltip('Edit Category'), findsOneWidget);
+      expect(find.byTooltip('Delete Category'), findsNothing);
+      expect(find.byIcon(Icons.drag_handle), findsOneWidget);
+
+      // Edit 'Ungrouped' to rename it to 'Ongegroepeerd'
+      await tester.tap(find.byTooltip('Edit Category'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit Category "Ungrouped"'), findsOneWidget);
+      // Pre-populated with #88AA00
+      expect(find.text('88AA00'), findsOneWidget);
+
+      await tester.enterText(find.widgetWithText(TextField, 'Category Name'), 'Ongegroepeerd');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Ongegroepeerd'), findsWidgets);
+
+      // Close Settings and verify main view reflects 'Ongegroepeerd'
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+      expect(find.text('Ongegroepeerd'), findsOneWidget);
+
+      // Now assign both roles to a new category so 0 roles remain ungrouped
+      await tester.tap(find.byIcon(Icons.settings));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Role Categories'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'New Category'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Category Name'), 'team');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(TextButton, 'Select All'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Save'));
+      await tester.pumpAndSettle();
+
+      // Since all roles are now in 'team', the default ungrouped card is hidden in Settings
+      expect(find.byKey(const ValueKey('__ungrouped__')), findsNothing);
+      expect(find.byKey(const ValueKey('team')), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Close'));
+      await tester.pumpAndSettle();
+
+      // And hidden in the main RoleManagementWidget as well
+      expect(find.byKey(const ValueKey('category_header___ungrouped__')), findsNothing);
+      expect(find.byKey(const ValueKey('category_header_team')), findsOneWidget);
+      expect(find.text('team'), findsOneWidget);
     });
   });
 }

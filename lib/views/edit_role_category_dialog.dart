@@ -1,43 +1,28 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/pg_user_group.dart';
 
-class EditRoleCategoryResult {
-  final String category;
-  final List<String> assignedRoleNames;
-
-  const EditRoleCategoryResult({
-    required this.category,
-    required this.assignedRoleNames,
-  });
-
+class const EditRoleCategoryResult({
+  required final String category,
+  required final List<String> assignedRoleNames,
+}) {
   @override
   String toString() => category;
 }
 
 enum RoleCategoryFilterSegment { all, inCategory, ungrouped }
 
-class EditRoleCategoryDialog extends StatefulWidget {
-  final String? roleName;
-  final String? title;
-  final String? subtitle;
-  final String? currentCategory;
-  final int? defaultOrder;
-  final List<String> existingCategories;
-  final List<PgUserGroup>? availableRoles;
-  final List<String>? initialSelectedRoleNames;
-
-  const EditRoleCategoryDialog({
-    super.key,
-    this.roleName,
-    this.title,
-    this.subtitle,
-    this.currentCategory,
-    this.defaultOrder,
-    this.existingCategories = const [],
-    this.availableRoles,
-    this.initialSelectedRoleNames,
-  });
-
+class const EditRoleCategoryDialog({
+  super.key,
+  final String? roleName,
+  final String? title,
+  final String? subtitle,
+  final String? currentCategory,
+  final int? defaultOrder,
+  final List<String> existingCategories = const [],
+  final List<PgUserGroup>? availableRoles,
+  final List<String>? initialSelectedRoleNames,
+  final bool isDefaultUngrouped = false,
+}) extends StatefulWidget {
   @override
   State<EditRoleCategoryDialog> createState() => _EditRoleCategoryDialogState();
 }
@@ -49,7 +34,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
   late final TextEditingController _searchController;
   int? _existingOrder;
   late final Set<String> _selectedRoleNames;
-  RoleCategoryFilterSegment _selectedSegment = RoleCategoryFilterSegment.all;
+  RoleCategoryFilterSegment _selectedSegment = .all;
   String _searchQuery = '';
 
   static const List<({String label, String hex})> _presetColors = [
@@ -70,14 +55,11 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
   @override
   void initState() {
     super.initState();
-    final raw = widget.currentCategory ?? '';
-    final parts = raw.split(':');
-    final name = parts.isNotEmpty ? parts[0].trim() : '';
-    _existingOrder = parts.length > 1 ? int.tryParse(parts[1].trim()) : null;
-    final color = parts.length > 2 ? parts[2].trim().replaceAll('#', '') : '';
+    final parsed = PgUserGroup.parseCategory(widget.currentCategory);
+    _existingOrder = parsed.order;
 
-    _nameController = TextEditingController(text: name);
-    _colorController = TextEditingController(text: color);
+    _nameController = TextEditingController(text: parsed.name ?? '');
+    _colorController = TextEditingController(text: parsed.colorHex ?? '');
     _searchController = TextEditingController();
     _selectedRoleNames = Set<String>.from(widget.initialSelectedRoleNames ?? const []);
   }
@@ -90,21 +72,14 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
     super.dispose();
   }
 
-  Color? get _activeColor {
-    final hex = _colorController.text.trim().replaceAll('#', '');
-    if (hex.isEmpty) return null;
-    final cleanHex = hex.length == 6 ? 'FF$hex' : hex;
-    final val = int.tryParse(cleanHex, radix: 16);
-    if (val != null) return Color(val);
-    return null;
-  }
+  Color? get _activeColor => PgUserGroup.parseCategoryColor(_colorController.text);
 
   void _selectSuggestion(String rawCategory) {
-    final parts = rawCategory.split(':');
+    final parsed = PgUserGroup.parseCategory(rawCategory);
     setState(() {
-      _nameController.text = parts.isNotEmpty ? parts[0].trim() : '';
-      _existingOrder = parts.length > 1 ? int.tryParse(parts[1].trim()) : null;
-      _colorController.text = parts.length > 2 ? parts[2].trim().replaceAll('#', '') : '';
+      _nameController.text = parsed.name ?? '';
+      _existingOrder = parsed.order;
+      _colorController.text = parsed.colorHex ?? '';
     });
   }
 
@@ -160,16 +135,13 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
       }
 
       final isSelected = _selectedRoleNames.contains(role.name);
-      final isUngrouped = role.category == null || role.category!.trim().isEmpty;
+      final isUngrouped = role.isDefaultUngrouped;
 
-      switch (_selectedSegment) {
-        case RoleCategoryFilterSegment.all:
-          return true;
-        case RoleCategoryFilterSegment.inCategory:
-          return isSelected;
-        case RoleCategoryFilterSegment.ungrouped:
-          return isUngrouped;
-      }
+      return switch (_selectedSegment) {
+        .all => true,
+        .inCategory => isSelected,
+        .ungrouped => isUngrouped,
+      };
     }).toList();
   }
 
@@ -210,26 +182,33 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
   }
 
   Widget _buildRoleTile(ThemeData theme, PgUserGroup role) {
-    final isSelected = _selectedRoleNames.contains(role.name);
+    final isLockedInUngrouped = widget.isDefaultUngrouped && role.isDefaultUngrouped;
+    final isSelected = isLockedInUngrouped || _selectedRoleNames.contains(role.name);
     final otherCat = role.categoryName ?? role.category;
     final currentCatName = _nameController.text.trim();
-    final hasOtherCategory = otherCat != null &&
+    final hasOtherCategory = !role.isDefaultUngrouped &&
+        otherCat != null &&
         otherCat.isNotEmpty &&
-        (currentCatName.isEmpty || otherCat.toLowerCase() != currentCatName.toLowerCase());
+        (widget.isDefaultUngrouped ||
+            currentCatName.isEmpty ||
+            otherCat.toLowerCase() != currentCatName.toLowerCase());
 
     return CheckboxListTile(
       dense: true,
       visualDensity: VisualDensity.compact,
+      enabled: !isLockedInUngrouped,
       value: isSelected,
-      onChanged: (val) {
-        setState(() {
-          if (val == true) {
-            _selectedRoleNames.add(role.name);
-          } else {
-            _selectedRoleNames.remove(role.name);
-          }
-        });
-      },
+      onChanged: isLockedInUngrouped
+          ? null
+          : (val) {
+              setState(() {
+                if (val == true) {
+                  _selectedRoleNames.add(role.name);
+                } else {
+                  _selectedRoleNames.remove(role.name);
+                }
+              });
+            },
       title: Row(
         children: [
           Expanded(
@@ -259,7 +238,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                 ),
               ),
             )
-          else if (role.category == null || role.category!.trim().isEmpty)
+          else if (role.isDefaultUngrouped)
             Container(
               margin: const EdgeInsets.only(left: 6),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -268,7 +247,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
-                'Ungrouped',
+                role.effectiveCategoryName,
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontSize: 10,
                   color: theme.colorScheme.onSurfaceVariant,
@@ -470,17 +449,21 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
   }) {
     final grantable = _grantableRoles;
     final filtered = _getFilteredRoles(grantable);
-    final allFilteredSelected = filtered.isNotEmpty &&
-        filtered.every((r) => _selectedRoleNames.contains(r.name));
+    final toggleableFiltered = widget.isDefaultUngrouped
+        ? filtered.where((r) => !r.isDefaultUngrouped).toList()
+        : filtered;
+    final allFilteredSelected = toggleableFiltered.isNotEmpty &&
+        toggleableFiltered.every((r) => _selectedRoleNames.contains(r.name));
 
     final allCount = grantable.length;
     var inCatCount = 0;
     var ungroupedCount = 0;
     for (final r in grantable) {
-      if (_selectedRoleNames.contains(r.name)) {
+      if (_selectedRoleNames.contains(r.name) ||
+          (widget.isDefaultUngrouped && r.isDefaultUngrouped)) {
         inCatCount++;
       }
-      if (r.category == null || r.category!.trim().isEmpty) {
+      if (r.isDefaultUngrouped) {
         ungroupedCount++;
       }
     }
@@ -495,7 +478,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
           inCatCount: inCatCount,
           ungroupedCount: ungroupedCount,
           allFilteredSelected: allFilteredSelected,
-          filtered: filtered,
+          filtered: toggleableFiltered,
           isCompactHeight: isCompactHeight,
         );
 
@@ -703,8 +686,7 @@ class _EditRoleCategoryDialogState extends State<EditRoleCategoryDialog> {
                         spacing: 8.0,
                         runSpacing: 6.0,
                         children: widget.existingCategories.map((rawCat) {
-                          final parts = rawCat.split(':');
-                          final name = parts.isNotEmpty ? parts[0].trim() : rawCat;
+                          final name = PgUserGroup.parseCategory(rawCat).name ?? rawCat;
                           final isSelected = currentName.toLowerCase() == name.toLowerCase();
                           return ChoiceChip(
                             label: Text(name),

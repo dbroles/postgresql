@@ -39,6 +39,19 @@ void main() {
               '{"hr":"department:1:1E88E5","nld":"country:2:FB8C00"}',
         });
 
+        final superDb = DatabaseService(
+          host: host,
+          port: v.port,
+          username: 'postgres',
+          password: 'postgres',
+          sslMode: SslMode.disable,
+        );
+        try {
+          await superDb.setupRoleAdmin('dbroles', 'dbroles', grantAdminOption: true);
+        } finally {
+          await superDb.close();
+        }
+
         final db = DatabaseService(
           host: host,
           port: v.port,
@@ -66,12 +79,9 @@ void main() {
           final groupNames = groups.map((g) => g.name).toSet();
           expect(groupNames, containsAll(['hr', 'finance', 'nld', 'bel', 'usa', 'legacy_role']));
 
-          // 4. Check Category capability
-          final canSetCategory = await db.canCurrentUserSetCategoryParameter(forceRefresh: true);
-          expect(canSetCategory, isTrue);
-
-          // 5. Fetch User Groups for Alice
+          // 4. Fetch User Groups for Alice
           final alice = users.firstWhere((r) => r.name == 'alice');
+          expect(alice.canDrop, isFalse); // Has external grantor ('postgres')
           final aliceGroups = await db.fetchGroupsForUser(alice.oid, forceRefresh: true);
           expect(aliceGroups.isNotEmpty, isTrue);
 

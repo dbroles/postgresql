@@ -1,9 +1,10 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:user_manager/main.dart';
 import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/models/pg_user_group.dart';
 import 'package:user_manager/views/connection_settings_page.dart';
@@ -104,8 +105,6 @@ void main() {
       'showRolesAsUsers': false,
       'showConnectedUser': false,
       'showUngrantableRoles': false,
-      'showUngrantableUsers': false,
-      'showUsersWithoutAdminOption': false,
     });
   });
 
@@ -248,8 +247,8 @@ void main() {
     });
   });
 
-  group('Show / Hide Ungrantable Roles Setting', () {
-    testWidgets('hides ungrantable roles by default and shows them when toggled in settings', (WidgetTester tester) async {
+  group('Ungrantable Roles Are Permanently Hidden', () {
+    testWidgets('permanently hides ungrantable roles and does not show visibility toggles in settings', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -273,106 +272,24 @@ void main() {
       // developers (canManage: true) is visible
       expect(find.textContaining('developers'), findsOneWidget);
 
-      // finance_restricted (canManage: false) is hidden by default
+      // finance_restricted (canManage: false) is permanently hidden
       expect(find.textContaining('finance_restricted'), findsNothing);
 
-      // Open settings menu
+      // Open settings menu and verify removed visibility switches are absent
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 
-      // Verify the switch tile exists and is initially OFF
-      final switchFinder = find.widgetWithText(SwitchListTile, 'Show Ungrantable Roles');
-      expect(switchFinder, findsOneWidget);
-      SwitchListTile switchWidget = tester.widget<SwitchListTile>(switchFinder);
-      expect(switchWidget.value, isFalse);
-
-      // Toggle switch ON
-      await tester.tap(switchFinder);
-      await tester.pumpAndSettle();
-
-      // Switch should now be ON
-      switchWidget = tester.widget<SwitchListTile>(switchFinder);
-      expect(switchWidget.value, isTrue);
-
-      // Verify SharedPreferences was updated
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('showUngrantableRoles'), isTrue);
-
-      // Close settings modal by tapping outside or popping
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // finance_restricted is now visible and disabled
-      expect(find.textContaining('finance_restricted'), findsOneWidget);
-      final checkboxFinder = find.byWidgetPredicate(
-        (widget) => widget is CheckboxListTile && widget.title != null && (tester.widget<CheckboxListTile>(find.byWidget(widget)).title?.toString().contains('finance_restricted') ?? false),
-      );
-      expect(checkboxFinder, findsOneWidget);
-      final checkboxWidget = tester.widget<CheckboxListTile>(checkboxFinder);
-      expect(checkboxWidget.enabled, isFalse);
-
-      // Re-open settings and toggle it back OFF
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(SwitchListTile, 'Show Ungrantable Roles'));
-      await tester.pumpAndSettle();
-      expect(prefs.getBool('showUngrantableRoles'), isFalse);
-
-      // Close modal
-      final NavigatorState navigator2 = tester.state(find.byType(Navigator).last);
-      navigator2.pop();
-      await tester.pumpAndSettle();
-
-      // finance_restricted is hidden again
-      expect(find.textContaining('finance_restricted'), findsNothing);
-      expect(find.textContaining('developers'), findsOneWidget);
-    });
-
-    testWidgets('shows ungrantable roles if initial setting is true', (WidgetTester tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'test_admin',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': true,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(roles: sampleRoles);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Select Alice
-      await tester.tap(find.text('alice'));
-      await tester.pumpAndSettle();
-
-      // Both developers and finance_restricted should be visible immediately
-      expect(find.textContaining('developers'), findsOneWidget);
-      expect(find.textContaining('finance_restricted'), findsOneWidget);
+      expect(find.widgetWithText(SwitchListTile, 'Show Ungrantable Roles'), findsNothing);
+      expect(find.widgetWithText(SwitchListTile, 'Show System Roles'), findsNothing);
+      expect(find.widgetWithText(SwitchListTile, 'Show Superusers'), findsNothing);
+      expect(find.widgetWithText(SwitchListTile, 'Show Connected User'), findsNothing);
+      expect(find.widgetWithText(SwitchListTile, 'Show Filters'), findsNothing);
+      expect(find.widgetWithText(SwitchListTile, 'Show Descriptions'), findsOneWidget);
     });
   });
 
-  group('Show / Hide Users Without Admin Option Setting', () {
-    testWidgets('hides users without admin option by default and shows them when toggled in settings', (WidgetTester tester) async {
+  group('Users Without Admin Option Are Permanently Hidden', () {
+    testWidgets('permanently hides users without admin option and does not show toggle in settings', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -393,129 +310,14 @@ void main() {
       expect(find.text('alice'), findsOneWidget);
       expect(find.text('bob'), findsOneWidget);
 
-      // charlie (isAdmin: false) is hidden by default
+      // charlie (isAdmin: false) is permanently hidden
       expect(find.text('charlie'), findsNothing);
 
-      // Open settings menu
+      // Open settings menu and verify 'Show Users Without Admin' does not exist
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 
-      // Verify the switch tile exists and is initially OFF
-      final switchFinder = find.widgetWithText(SwitchListTile, 'Show Users Without Admin');
-      expect(switchFinder, findsOneWidget);
-      SwitchListTile switchWidget = tester.widget<SwitchListTile>(switchFinder);
-      expect(switchWidget.value, isFalse);
-
-      // Toggle switch ON
-      await tester.tap(switchFinder);
-      await tester.pumpAndSettle();
-
-      // Switch should now be ON
-      switchWidget = tester.widget<SwitchListTile>(switchFinder);
-      expect(switchWidget.value, isTrue);
-
-      // Verify SharedPreferences was updated
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('showUsersWithoutAdminOption'), isTrue);
-
-      // Close settings modal
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // charlie is now visible in the user list
-      expect(find.text('charlie'), findsOneWidget);
-
-      // Re-open settings and toggle it back OFF
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.widgetWithText(SwitchListTile, 'Show Users Without Admin'));
-      await tester.pumpAndSettle();
-      expect(prefs.getBool('showUsersWithoutAdminOption'), isFalse);
-
-      // Close modal
-      final NavigatorState navigator2 = tester.state(find.byType(Navigator).last);
-      navigator2.pop();
-      await tester.pumpAndSettle();
-
-      // charlie is hidden again
-      expect(find.text('charlie'), findsNothing);
-      expect(find.text('alice'), findsOneWidget);
-    });
-
-    testWidgets('shows users without admin option if initial setting is true', (WidgetTester tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'test_admin',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(roles: sampleRoles);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // All users including charlie should be visible immediately
-      expect(find.text('alice'), findsOneWidget);
-      expect(find.text('bob'), findsOneWidget);
-      expect(find.text('charlie'), findsOneWidget);
-    });
-
-    testWidgets('respects legacy showUngrantableUsers if showUsersWithoutAdminOption is not set', (WidgetTester tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'test_admin',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': false,
-        'showUngrantableUsers': true,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(roles: sampleRoles);
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Charlie should be visible due to legacy fallback
-      expect(find.text('charlie'), findsOneWidget);
+      expect(find.widgetWithText(SwitchListTile, 'Show Users Without Admin'), findsNothing);
     });
   });
 
@@ -533,7 +335,6 @@ void main() {
         'showRolesAsUsers': false,
         'showConnectedUser': false,
         'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -577,7 +378,6 @@ void main() {
         'showRolesAsUsers': false,
         'showConnectedUser': false,
         'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -587,7 +387,23 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final fakeDb = FakeDatabaseService(roles: sampleRoles);
+      final rolesWithNonDeletable = [
+        ...sampleRoles,
+        PgRole(
+          oid: 104,
+          name: 'dave_createdb',
+          canLogin: true,
+          isSuperuser: false,
+          inherit: true,
+          createRole: false,
+          createDb: true,
+          replication: false,
+          bypassRls: false,
+          canManage: true,
+          canDrop: true,
+        ),
+      ];
+      final fakeDb = FakeDatabaseService(roles: rolesWithNonDeletable);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -596,8 +412,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Select non-deletable user 'charlie' (canDrop: false)
-      await tester.tap(find.text('charlie'));
+      // Select visible non-deletable user 'dave_createdb' (has elevated createDb attribute)
+      await tester.tap(find.text('dave_createdb'));
       await tester.pumpAndSettle();
 
       // Delete button must NOT be visible
@@ -617,7 +433,6 @@ void main() {
         'showRolesAsUsers': false,
         'showConnectedUser': false,
         'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -644,16 +459,100 @@ void main() {
       await tester.tap(find.byTooltip('Delete User'));
       await tester.pumpAndSettle();
 
-      // Confirmation dialog should be displayed
+      //Confirmation dialog should be displayed
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(find.text('Delete User'), findsOneWidget);
       expect(find.text('Are you sure you want to delete the user "alice"? This action cannot be undone.'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
     });
+
+    testWidgets('hides delete button when user has external grantor on an ungrantable role', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      // Role 202 ('finance_restricted') is NOT managed by test_user (canManage: false),
+      // and was granted to alice (oid: 101) by another admin ('finance_admin').
+      final fakeDb = FakeDatabaseService(
+        username: 'test_user',
+        roles: sampleRoles,
+        memberships: [
+          (
+            roleOid: 202,
+            memberOid: 101,
+            grantor: 'finance_admin',
+            adminOption: false,
+            inheritOption: true,
+            setOption: true,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+
+      // Even though finance_restricted is hidden from the role list, SQL can_drop is false
+      expect(find.byTooltip('Delete User'), findsNothing);
+    });
+
+    testWidgets('mobile RoleMembershipPage updates Delete User button visibility on pull-to-refresh', (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final fakeDb = FakeDatabaseService(
+        username: 'test_user',
+        roles: List.of(sampleRoles),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: RoleManagerHome(dbService: fakeDb),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Open alice on mobile -> Delete User is initially visible
+      await tester.tap(find.text('alice'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Delete User'), findsOneWidget);
+
+      // Another admin grants a role to alice in the background -> canDrop becomes false
+      fakeDb.mockMemberships = [
+        (
+          roleOid: 202,
+          memberOid: 101,
+          grantor: 'finance_admin',
+          adminOption: false,
+          inheritOption: true,
+          setOption: true,
+        ),
+      ];
+
+      // Pull to refresh on RoleMembershipPage
+      await tester.fling(find.byType(ListView), const Offset(0, 300), 1000);
+      await tester.pumpAndSettle();
+
+      // Delete User button is now hidden
+      expect(find.byTooltip('Delete User'), findsNothing);
+    });
   });
 
-  group('Show Superusers and Connected User regardless of Show Ungrantable Users', () {
+  group('Superusers and Connected User Are Permanently Hidden', () {
     final customRoles = [
       PgRole(
         oid: 101,
@@ -678,7 +577,7 @@ void main() {
         createDb: true,
         replication: false,
         bypassRls: false,
-        canManage: false,
+        canManage: true,
         canDrop: false,
       ),
       PgRole(
@@ -686,12 +585,13 @@ void main() {
         name: 'connected_agent',
         canLogin: true,
         isSuperuser: false,
+        isCurrent: true,
         inherit: true,
         createRole: false,
         createDb: false,
         replication: false,
         bypassRls: false,
-        canManage: false,
+        canManage: true,
         canDrop: false,
       ),
       PgRole(
@@ -709,20 +609,14 @@ void main() {
       ),
     ];
 
-    testWidgets('shows superusers when showSuperusers is true even if showUsersWithoutAdminOption is false', (tester) async {
+    testWidgets('permanently hides superusers, connected user, and non-admin users', (tester) async {
       SharedPreferences.setMockInitialValues({
         'db_host': 'localhost',
         'db_port': 5432,
         'db_user': 'connected_agent',
         'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': true,
         'showDescriptions': true,
         'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': false,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -744,174 +638,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Alice (canManage: true) is visible
+      // Alice (canManage: true, !isSuperuser, !isCurrent) is visible
       expect(find.text('alice'), findsOneWidget);
-      // super_admin (isSuperuser: true, canManage: false) is visible because showSuperusers is true
-      expect(find.text('super_admin'), findsOneWidget);
-      // charlie_ungrantable (canManage: false) is hidden because showUsersWithoutAdminOption is false
-      expect(find.text('charlie_ungrantable'), findsNothing);
-      // connected_agent is hidden because showConnectedUser is false
-      expect(find.text('connected_agent'), findsNothing);
-    });
-
-    testWidgets('shows connected user when showConnectedUser is true even if showUsersWithoutAdminOption is false', (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'connected_agent',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': true,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': false,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(
-        username: 'connected_agent',
-        roles: customRoles,
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Alice is visible
-      expect(find.text('alice'), findsOneWidget);
-      // connected_agent (canManage: false) is visible because showConnectedUser is true
-      expect(find.text('connected_agent'), findsOneWidget);
-      // super_admin is hidden because showSuperusers is false
+      // super_admin, connected_agent, and charlie_ungrantable are permanently hidden
       expect(find.text('super_admin'), findsNothing);
-      // charlie_ungrantable is hidden because showUsersWithoutAdminOption is false
-      expect(find.text('charlie_ungrantable'), findsNothing);
-    });
-
-    testWidgets('toggling showSuperusers in settings reveals superusers while showUsersWithoutAdminOption is false', (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'connected_agent',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': false,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(
-        username: 'connected_agent',
-        roles: customRoles,
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Initially super_admin is not visible
-      expect(find.text('super_admin'), findsNothing);
-
-      // Open settings menu
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      // Toggle 'Show Superusers' switch
-      final superusersSwitchFinder = find.widgetWithText(SwitchListTile, 'Show Superusers');
-      await tester.ensureVisible(superusersSwitchFinder);
-      await tester.tap(superusersSwitchFinder);
-      await tester.pumpAndSettle();
-
-      // Close settings modal
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // super_admin is now visible while charlie_ungrantable remains hidden
-      expect(find.text('super_admin'), findsOneWidget);
-      expect(find.text('charlie_ungrantable'), findsNothing);
-    });
-
-    testWidgets('toggling showConnectedUser in settings reveals connected user while showUsersWithoutAdminOption is false', (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'connected_agent',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': false,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showRolesAsUsers': false,
-        'showConnectedUser': false,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': false,
-      });
-
-      tester.view.physicalSize = const Size(1200, 800);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(() {
-        tester.view.resetPhysicalSize();
-        tester.view.resetDevicePixelRatio();
-      });
-
-      final fakeDb = FakeDatabaseService(
-        username: 'connected_agent',
-        roles: customRoles,
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: RoleManagerHome(dbService: fakeDb),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      // Initially connected_agent is not visible
       expect(find.text('connected_agent'), findsNothing);
-
-      // Open settings menu
-      await tester.tap(find.byIcon(Icons.settings));
-      await tester.pumpAndSettle();
-
-      // Toggle 'Show Connected User' switch
-      final connectedUserSwitchFinder = find.widgetWithText(SwitchListTile, 'Show Connected User');
-      await tester.ensureVisible(connectedUserSwitchFinder);
-      await tester.tap(connectedUserSwitchFinder);
-      await tester.pumpAndSettle();
-
-      // Close settings modal
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // connected_agent is now visible while charlie_ungrantable remains hidden
-      expect(find.text('connected_agent'), findsOneWidget);
       expect(find.text('charlie_ungrantable'), findsNothing);
     });
   });
@@ -930,7 +661,6 @@ void main() {
         'showRolesAsUsers': false,
         'showConnectedUser': false,
         'showUngrantableRoles': true,
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -1042,7 +772,6 @@ void main() {
         'showRolesAsUsers': false,
         'showConnectedUser': false,
         'showUngrantableRoles': true,
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -1183,41 +912,8 @@ void main() {
     });
   });
 
-  group('Deselect user when visibility setting is toggled off', () {
-    final testRoles = [
-      PgRole(
-        oid: 201,
-        name: 'super_admin',
-        canLogin: true,
-        isSuperuser: true,
-        canManage: false,
-        canDrop: false,
-      ),
-      PgRole(
-        oid: 202,
-        name: 'connected_agent',
-        canLogin: true,
-        isSuperuser: false,
-        canManage: false,
-        canDrop: false,
-      ),
-    ];
-
-    testWidgets('deselects superuser when Show Superusers is toggled off', (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'connected_agent',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': true,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showConnectedUser': true,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
-      });
-
+  group('AppBar Search Toggle & Theme Mode Setting', () {
+    testWidgets('AppBar Search button toggles search filters on and off', (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
@@ -1225,10 +921,7 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final fakeDb = FakeDatabaseService(
-        username: 'connected_agent',
-        roles: testRoles,
-      );
+      final fakeDb = FakeDatabaseService(roles: sampleRoles);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -1237,61 +930,35 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tap on super_admin to select
-      await tester.tap(find.text('super_admin'));
+      // Initially filters are hidden
+      expect(find.widgetWithText(TextField, 'Filter users...'), findsNothing);
+      expect(find.byTooltip('Search'), findsOneWidget);
+
+      // Tap Search button in AppBar -> shows filters
+      await tester.tap(find.byTooltip('Search'));
       await tester.pumpAndSettle();
 
-      // Right pane should show management UI for super_admin
-      expect(find.text('User Manager - super_admin'), findsOneWidget);
-      expect(find.text('Select a user to manage roles'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Filter users...'), findsOneWidget);
+      expect(find.byTooltip('Hide Filters'), findsOneWidget);
 
-      // Open settings
-      await tester.tap(find.byIcon(Icons.settings));
+      // Tap Hide Filters button in AppBar -> hides filters
+      await tester.tap(find.byTooltip('Hide Filters'));
       await tester.pumpAndSettle();
 
-      // Toggle 'Show Superusers' off
-      final superusersSwitch = find.widgetWithText(SwitchListTile, 'Show Superusers');
-      await tester.ensureVisible(superusersSwitch);
-      await tester.tap(superusersSwitch);
-      await tester.pumpAndSettle();
-
-      // Close settings modal
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
-      await tester.pumpAndSettle();
-
-      // super_admin should no longer be visible in the list, and selection should be cleared
-      expect(find.text('super_admin'), findsNothing);
-      expect(find.text('Select a user to manage roles'), findsOneWidget);
-      expect(find.text('User Manager'), findsOneWidget);
+      expect(find.widgetWithText(TextField, 'Filter users...'), findsNothing);
+      expect(find.byTooltip('Search'), findsOneWidget);
     });
 
-    testWidgets('deselects connected user when Show Connected User is toggled off', (tester) async {
-      SharedPreferences.setMockInitialValues({
-        'db_host': 'localhost',
-        'db_port': 5432,
-        'db_user': 'connected_agent',
-        'db_pass': '',
-        'showSystemRoles': false,
-        'showSuperusers': true,
-        'showDescriptions': true,
-        'showFilters': false,
-        'showConnectedUser': true,
-        'showUngrantableRoles': false,
-        'showUsersWithoutAdminOption': true,
-      });
-
+    testWidgets('Theme SegmentedButton in Settings switches theme mode and persists to SharedPreferences', (tester) async {
       tester.view.physicalSize = const Size(1200, 800);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() {
         tester.view.resetPhysicalSize();
         tester.view.resetDevicePixelRatio();
+        appThemeModeNotifier.value = ThemeMode.system;
       });
 
-      final fakeDb = FakeDatabaseService(
-        username: 'connected_agent',
-        roles: testRoles,
-      );
+      final fakeDb = FakeDatabaseService(roles: sampleRoles);
 
       await tester.pumpWidget(
         MaterialApp(
@@ -1300,33 +967,31 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Tap on connected_agent to select
-      await tester.tap(find.text('connected_agent'));
-      await tester.pumpAndSettle();
-
-      // Right pane should show management UI for connected_agent
-      expect(find.text('User Manager - connected_agent'), findsOneWidget);
-      expect(find.text('Select a user to manage roles'), findsNothing);
+      expect(appThemeModeNotifier.value, ThemeMode.system);
 
       // Open settings
       await tester.tap(find.byIcon(Icons.settings));
       await tester.pumpAndSettle();
 
-      // Toggle 'Show Connected User' off
-      final connectedUserSwitch = find.widgetWithText(SwitchListTile, 'Show Connected User');
-      await tester.ensureVisible(connectedUserSwitch);
-      await tester.tap(connectedUserSwitch);
+      expect(find.text('Theme'), findsOneWidget);
+      expect(find.text('System'), findsOneWidget);
+      expect(find.text('Light'), findsOneWidget);
+      expect(find.text('Dark'), findsOneWidget);
+
+      // Tap Dark segment
+      await tester.tap(find.text('Dark'));
       await tester.pumpAndSettle();
 
-      // Close settings modal
-      final NavigatorState navigator = tester.state(find.byType(Navigator).last);
-      navigator.pop();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getString('themeMode'), 'dark');
+      expect(appThemeModeNotifier.value, ThemeMode.dark);
+
+      // Tap Light segment
+      await tester.tap(find.text('Light'));
       await tester.pumpAndSettle();
 
-      // connected_agent should no longer be visible in the list, and selection should be cleared
-      expect(find.text('connected_agent'), findsNothing);
-      expect(find.text('Select a user to manage roles'), findsOneWidget);
-      expect(find.text('User Manager'), findsOneWidget);
+      expect(prefs.getString('themeMode'), 'light');
+      expect(appThemeModeNotifier.value, ThemeMode.light);
     });
   });
 
@@ -1595,13 +1260,12 @@ void main() {
   });
 
   group('Edit User Button Visibility and Flow (Desktop & Mobile)', () {
-    testWidgets('desktop: Edit User button is visible only when CREATEROLE is true AND selected user has ADMIN', (tester) async {
+    testWidgets('desktop: Edit User button is visible when CREATEROLE is true and updates user', (tester) async {
       SharedPreferences.setMockInitialValues({
         'db_host': 'localhost',
         'db_port': 5432,
         'db_user': 'test_admin',
         'db_pass': '',
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(1200, 800);
@@ -1612,6 +1276,7 @@ void main() {
       });
 
       final fakeDb = FakeDatabaseService(
+        username: 'test_admin',
         canCreateRoleResult: true,
         roles: List.of(sampleRoles),
       );
@@ -1624,11 +1289,6 @@ void main() {
       await tester.pumpAndSettle();
 
       // Initially no user selected -> no Edit User button
-      expect(find.byTooltip('Edit User'), findsNothing);
-
-      // Select charlie (isAdmin: false) -> no Edit User button
-      await tester.tap(find.text('charlie'));
-      await tester.pumpAndSettle();
       expect(find.byTooltip('Edit User'), findsNothing);
 
       // Select alice (isAdmin: true) -> Edit User button is visible
@@ -1680,13 +1340,12 @@ void main() {
       expect(find.byTooltip('Edit User'), findsNothing);
     });
 
-    testWidgets('mobile: Edit User button is visible on RoleMembershipPage only when CREATEROLE and ADMIN are true', (tester) async {
+    testWidgets('mobile: Edit User button is visible on RoleMembershipPage when CREATEROLE and ADMIN are true', (tester) async {
       SharedPreferences.setMockInitialValues({
         'db_host': 'localhost',
         'db_port': 5432,
         'db_user': 'test_admin',
         'db_pass': '',
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(400, 800);
@@ -1697,6 +1356,7 @@ void main() {
       });
 
       final fakeDb = FakeDatabaseService(
+        username: 'test_admin',
         canCreateRoleResult: true,
         roles: List.of(sampleRoles),
       );
@@ -1706,16 +1366,6 @@ void main() {
           home: RoleManagerHome(dbService: fakeDb),
         ),
       );
-      await tester.pumpAndSettle();
-
-      // Tap charlie (isAdmin: false) -> navigates to RoleMembershipPage without Edit User button
-      await tester.tap(find.text('charlie'));
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Edit User'), findsNothing);
-
-      // Navigate back and select alice (isAdmin: true)
-      final NavigatorState navigator = tester.state(find.byType(Navigator));
-      navigator.pop();
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('alice'));
@@ -1905,7 +1555,6 @@ void main() {
         'db_port': 5432,
         'db_user': 'test_admin',
         'db_pass': '',
-        'showUsersWithoutAdminOption': true,
       });
 
       tester.view.physicalSize = const Size(400, 800);

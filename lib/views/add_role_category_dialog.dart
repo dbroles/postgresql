@@ -1,21 +1,16 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 import 'edit_role_category_dialog.dart';
 
 typedef AddRoleCategoryResult = EditRoleCategoryResult;
 
-class AddRoleCategoryDialog extends StatelessWidget {
-  final List<PgRole> availableRoles;
-  final List<String> existingCategories;
-  final int? defaultOrder;
-
-  const AddRoleCategoryDialog({
-    super.key,
-    required this.availableRoles,
-    this.existingCategories = const [],
-    this.defaultOrder,
-  });
+class const AddRoleCategoryDialog({
+  super.key,
+  required final List<PgRole> availableRoles,
+  final List<String> existingCategories = const [],
+  final int? defaultOrder,
+}) extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {

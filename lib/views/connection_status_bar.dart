@@ -1,25 +1,16 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
-class ConnectionStatusBar extends StatefulWidget {
-  final String? clusterName;
-  final String host;
-  final int port;
-  final String database;
-  final String username;
-  final bool isSslEnabled;
-  final VoidCallback? onTap;
-
-  const ConnectionStatusBar({
-    super.key,
-    this.clusterName,
-    required this.host,
-    this.port = 5432,
-    this.database = 'postgres',
-    this.username = '',
-    required this.isSslEnabled,
-    this.onTap,
-  });
+class const ConnectionStatusBar({
+  super.key,
+  final String? clusterName,
+  required final String host,
+  final int port = 5432,
+  final String database = 'postgres',
+  final String username = '',
+  required final bool isSslEnabled,
+  final VoidCallback? onTap,
+}) extends StatefulWidget {
 
   /// Formats the connection target as `username@host[:port]/database`,
   /// omitting `:port` when [port] is the default PostgreSQL port (5432).
@@ -108,13 +99,13 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
         if (hasCluster) ...[
           TextSpan(
             text: widget.clusterName,
-            style: const TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(fontWeight: .bold),
           ),
           const TextSpan(text: ' on '),
         ],
         TextSpan(
           text: target,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(fontWeight: .bold),
         ),
       ],
     );
@@ -151,7 +142,7 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
                     return Text.rich(
                       textSpan,
                       maxLines: 1,
-                      overflow: TextOverflow.clip,
+                      overflow: .clip,
                     );
                   }
 
@@ -181,7 +172,7 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
                         child: Transform.translate(
                           offset: Offset(-_offset, 0),
                           child: OverflowBox(
-                            alignment: Alignment.centerLeft,
+                            alignment: .centerLeft,
                             minWidth: 0,
                             maxWidth: double.infinity,
                             child: Text.rich(
@@ -231,18 +222,12 @@ class _ConnectionStatusBarState extends State<ConnectionStatusBar> {
   }
 }
 
-class _TickerLoopPainter extends CustomPainter {
-  final TextPainter textPainter;
-  final TextPainter bulletPainter;
-  final double offset;
-  final double gapWidth;
-
-  _TickerLoopPainter({
-    required this.textPainter,
-    required this.bulletPainter,
-    required this.offset,
-    required this.gapWidth,
-  });
+class _TickerLoopPainter({
+  required final TextPainter textPainter,
+  required final TextPainter bulletPainter,
+  required final double offset,
+  required final double gapWidth,
+}) extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {

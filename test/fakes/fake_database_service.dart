@@ -1,16 +1,22 @@
-import 'package:postgres/postgres.dart';
-import 'package:user_manager/models/pg_membership.dart';
 import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/models/pg_user_group.dart';
 import 'package:user_manager/services/database_service.dart';
+
+typedef MockMembership = ({
+  int roleOid,
+  int memberOid,
+  String grantor,
+  bool adminOption,
+  bool inheritOption,
+  bool setOption,
+});
 
 class FakeDatabaseService extends DatabaseService {
   String? testConnectionResult;
   bool isSuperuserResult;
   bool canCreateRoleResult;
-  bool canSetCategoryParameterResult;
   List<PgRole> mockRoles;
-  List<PgMembership> mockMemberships;
+  List<MockMembership> mockMemberships;
   Map<int, List<PgUserGroup>>? mockUserGroups;
   String mockClusterName;
   bool mockSslStatus;
@@ -21,13 +27,17 @@ class FakeDatabaseService extends DatabaseService {
   int testConnectionCalls = 0;
   int isCurrentUserSuperuserCalls = 0;
   int canCurrentUserCreateRoleCalls = 0;
-  int canCurrentUserSetCategoryParameterCalls = 0;
   int fetchAllRolesCalls = 0;
   int fetchClusterNameCalls = 0;
   int fetchSslStatusCalls = 0;
   int fetchGroupsForUserCalls = 0;
   int clearCacheCalls = 0;
   int closeCalls = 0;
+  int setupRoleAdminCalls = 0;
+
+  String? lastSetupAdminName;
+  String? lastSetupAdminPass;
+  bool? lastSetupGrantAdminOption;
 
   final List<String> grantedRoles = [];
   final List<String> revokedRoles = [];
@@ -43,13 +53,12 @@ class FakeDatabaseService extends DatabaseService {
     super.database = 'postgres',
     super.username = 'test_user',
     super.password = '',
-    super.sslMode = SslMode.disable,
+    super.sslMode = .disable,
     this.testConnectionResult,
     this.isSuperuserResult = false,
     this.canCreateRoleResult = true,
-    this.canSetCategoryParameterResult = true,
     List<PgRole>? roles,
-    List<PgMembership>? memberships,
+    List<MockMembership>? memberships,
     this.mockClusterName = 'test_cluster',
     this.mockSslStatus = true,
     this.mockUserGroups,
@@ -60,16 +69,24 @@ class FakeDatabaseService extends DatabaseService {
   Future<List<PgUserGroup>> fetchGroupsForUser(int userOid, {bool forceRefresh = false}) async {
     fetchGroupsForUserCalls++;
     final storedCategories = await loadRoleCategories();
+    final ungroupedTemplate = await loadUngroupedCategoryTemplate();
     final currentCategories = roleCategories;
     if (mockUserGroups != null && mockUserGroups!.containsKey(userOid)) {
       final groups = mockUserGroups![userOid]!.map((g) {
         if (currentCategories.containsKey(g.name)) {
           final cat = currentCategories[g.name];
-          return g.copyWith(category: cat, clearCategory: cat == null);
+          return g.copyWith(
+            category: cat,
+            clearCategory: cat == null,
+            ungroupedTemplate: ungroupedTemplate,
+          );
         } else if (storedCategories.containsKey(g.name)) {
-          return g.copyWith(category: storedCategories[g.name]);
+          return g.copyWith(
+            category: storedCategories[g.name],
+            ungroupedTemplate: ungroupedTemplate,
+          );
         }
-        return g;
+        return g.copyWith(ungroupedTemplate: ungroupedTemplate);
       }).toList();
       groups.sort(DatabaseService.compareGroups);
       return groups;
@@ -99,6 +116,7 @@ class FakeDatabaseService extends DatabaseService {
         grantable: g.canManage,
         granted: isGrantedByMe,
         category: cat,
+        ungroupedTemplate: ungroupedTemplate,
       );
     }).toList();
 
@@ -167,9 +185,15 @@ class FakeDatabaseService extends DatabaseService {
   }
 
   @override
-  Future<bool> canCurrentUserSetCategoryParameter({bool forceRefresh = false}) async {
-    canCurrentUserSetCategoryParameterCalls++;
-    return canSetCategoryParameterResult;
+  Future<void> setupRoleAdmin(
+    String adminName,
+    String adminPass, {
+    bool grantAdminOption = true,
+  }) async {
+    setupRoleAdminCalls++;
+    lastSetupAdminName = adminName;
+    lastSetupAdminPass = adminPass;
+    lastSetupGrantAdminOption = grantAdminOption;
   }
 
   @override
@@ -187,7 +211,34 @@ class FakeDatabaseService extends DatabaseService {
     if (throwOnFetchAllRoles != null) {
       throw throwOnFetchAllRoles!;
     }
-    return List.of(mockRoles);
+    return mockRoles.map((r) {
+      final hasExternalInGroups =
+          mockUserGroups?[r.oid]?.any((g) => g.grantors.isNotEmpty) ?? false;
+      final hasExternalInMemberships = mockMemberships.any(
+        (m) => m.memberOid == r.oid && m.grantor != username,
+      );
+      if (r.canDrop && (hasExternalInGroups || hasExternalInMemberships)) {
+        return PgRole(
+          oid: r.oid,
+          name: r.name,
+          isSuperuser: r.isSuperuser,
+          inherit: r.inherit,
+          createRole: r.createRole,
+          createDb: r.createDb,
+          canLogin: r.canLogin,
+          replication: r.replication,
+          bypassRls: r.bypassRls,
+          isCurrent: r.isCurrent,
+          description: r.description,
+          isAdmin: r.isAdmin,
+          canDrop: false,
+          validUntil: r.validUntil,
+          isValid: r.isValid,
+          isExpiringSoon: r.isExpiringSoon,
+        );
+      }
+      return r;
+    }).toList();
   }
 
   @override

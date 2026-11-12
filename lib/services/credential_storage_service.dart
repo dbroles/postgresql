@@ -4,16 +4,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Workaround subclass for flutter_secure_storage_darwin key naming mismatch
 /// where native Swift expects 'useDataProtectionKeyChain' while Dart sends 'usesDataProtectionKeychain'.
-class AppMacOsOptions extends MacOsOptions {
-  const AppMacOsOptions({
-    super.accountName,
-    super.accessibility = KeychainAccessibility.first_unlock,
-    super.synchronizable,
-    super.useSecureEnclave,
-    super.usesDataProtectionKeychain = false,
-    super.groupId,
-  });
-
+class const AppMacOsOptions({
+  super.accountName,
+  super.accessibility = .first_unlock,
+  super.synchronizable,
+  super.useSecureEnclave,
+  super.usesDataProtectionKeychain = false,
+  super.groupId,
+}) extends MacOsOptions {
   @override
   Map<String, String> toMap() {
     final map = super.toMap();
@@ -31,17 +29,14 @@ class AppMacOsOptions extends MacOsOptions {
 
 /// Service responsible for managing database credentials securely
 /// via the operating system's native keychain/credential manager.
-class CredentialStorageService {
+class CredentialStorageService({FlutterSecureStorage? storage}) {
   static const String _dbPassKey = 'db_pass';
   static const MacOsOptions _macOsOptions = AppMacOsOptions();
 
-  final FlutterSecureStorage _storage;
-
-  CredentialStorageService({FlutterSecureStorage? storage})
-      : _storage = storage ??
-            const FlutterSecureStorage(
-              mOptions: _macOsOptions,
-            );
+  final FlutterSecureStorage _storage = storage ??
+      const FlutterSecureStorage(
+        mOptions: _macOsOptions,
+      );
 
   /// Builds a canonical key for scoping credentials to a specific connection.
   static String connectionStorageKey({
