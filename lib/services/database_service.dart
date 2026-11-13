@@ -4,38 +4,32 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 
-class DatabaseService {
-  String _host;
-  int _port;
-  String _database;
-  String _username;
-  String _password;
-  SslMode _sslMode;
+class DatabaseService({
+  String host = 'localhost',
+  int port = 5432,
+  String database = 'postgres',
+  String username = 'dbroles',
+  String password = '',
+  SslMode sslMode = .require,
+}) {
+  String _host = host;
+  int _port = port;
+  String _database = database;
+  String _username = username;
+  String _password = password;
+  SslMode _sslMode = sslMode;
 
   Pool? _pool;
 
   List<PgRole>? _cachedRoles;
+  Future<List<PgRole>>? _inFlightRolesFuture;
   List<PgUserGroup>? _cachedGroupCatalog;
   final Map<int, Map<int, ({bool granted, List<String> grantors})>> _cachedUserMemberships = {};
   String? _cachedClusterName;
+  bool? _cachedSslStatus;
   bool? _cachedIsSuperuser;
   bool? _cachedCanCreateRole;
-  bool? _cachedCanSetCategoryParameter;
   int? _cachedCurrentUserOid;
-
-  DatabaseService({
-    String host = 'localhost',
-    int port = 5432,
-    String database = 'postgres',
-    String username = 'dbroles',
-    String password = '',
-    SslMode sslMode = SslMode.require,
-  })  : _host = host,
-        _port = port,
-        _database = database,
-        _username = username,
-        _password = password,
-        _sslMode = sslMode;
 
   String get host => _host;
   set host(String value) {
@@ -107,12 +101,13 @@ class DatabaseService {
 
   void resetCache() {
     _cachedRoles = null;
+    _inFlightRolesFuture = null;
     _cachedGroupCatalog = null;
     _cachedUserMemberships.clear();
     _cachedClusterName = null;
+    _cachedSslStatus = null;
     _cachedIsSuperuser = null;
     _cachedCanCreateRole = null;
-    _cachedCanSetCategoryParameter = null;
     _cachedCurrentUserOid = null;
   }
 
@@ -155,23 +150,42 @@ class DatabaseService {
     }
   }
 
+  Future<void> _fetchSessionAndUserInfo({bool forceRefresh = false}) async {
+    if (!forceRefresh &&
+        _cachedCurrentUserOid != null &&
+        _cachedIsSuperuser != null &&
+        _cachedCanCreateRole != null &&
+        _cachedClusterName != null &&
+        _cachedSslStatus != null) {
+      return;
+    }
+    final pool = _getPool();
+    final result = await pool.execute(
+      '''
+      SELECT
+          r.oid::int,
+          (current_setting('is_superuser') = 'on' OR r.rolsuper) AS is_super,
+          (r.rolsuper OR r.rolcreaterole) AS can_create_role,
+          current_setting('cluster_name') AS cluster_name,
+          COALESCE((SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()), false) AS ssl
+      FROM pg_catalog.pg_roles r
+      WHERE r.rolname = CURRENT_USER
+      ''',
+      timeout: const Duration(seconds: 10),
+    );
+    if (result.isNotEmpty) {
+      final row = result.first;
+      _cachedCurrentUserOid = row[0] as int;
+      _cachedIsSuperuser = row[1] as bool;
+      _cachedCanCreateRole = row[2] as bool;
+      _cachedClusterName = row[3] as String;
+      _cachedSslStatus = row[4] as bool;
+    }
+  }
+
   Future<String?> testConnection() async {
     try {
-      final conn = await Connection.open(
-        Endpoint(
-          host: _host,
-          port: _port,
-          database: database,
-          username: _username,
-          password: _password,
-        ),
-        settings: ConnectionSettings(
-          sslMode: _sslMode,
-          applicationName: 'User Manager',
-          connectTimeout: const Duration(seconds: 10),
-        ),
-      );
-      await conn.close();
+      await _fetchSessionAndUserInfo(forceRefresh: true);
       return null; // Success
     } catch (e) {
       return e.toString();
@@ -182,6 +196,28 @@ class DatabaseService {
   String get categoryStorageScope => '$_host:$_username:$_database';
 
   String get _roleCategoriesPrefKey => 'role_categories_$categoryStorageScope';
+
+  String get _ungroupedCategoryPrefKey =>
+      'ungrouped_category_template_$categoryStorageScope';
+
+  Future<String> loadUngroupedCategoryTemplate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_ungroupedCategoryPrefKey)?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      return raw;
+    }
+    return PgUserGroup.defaultUngroupedTemplate;
+  }
+
+  Future<void> saveUngroupedCategoryTemplate(String template) async {
+    final prefs = await SharedPreferences.getInstance();
+    final trimmed = template.trim();
+    await prefs.setString(
+      _ungroupedCategoryPrefKey,
+      trimmed.isNotEmpty ? trimmed : PgUserGroup.defaultUngroupedTemplate,
+    );
+    _cachedGroupCatalog = null;
+  }
 
   Future<Map<String, String>> loadRoleCategories() async {
     final prefs = await SharedPreferences.getInstance();
@@ -201,35 +237,27 @@ class DatabaseService {
     await prefs.setString(_roleCategoriesPrefKey, jsonEncode(categories));
   }
 
-  Future<void> _fetchCurrentUserInfo({bool forceRefresh = false}) async {
-    if (!forceRefresh && _cachedCurrentUserOid != null && _cachedCanSetCategoryParameter != null) return;
-    final pool = _getPool();
-    final result = await pool.execute(
-      'SELECT oid::int, rolsuper, (rolsuper OR rolcreaterole) AS can_create_role FROM pg_roles WHERE rolname = current_user',
-    );
-    if (result.isNotEmpty) {
-      _cachedCurrentUserOid = result.first[0] as int;
-      _cachedIsSuperuser = result.first[1] as bool;
-      _cachedCanCreateRole = result.first[2] as bool;
-      _cachedCanSetCategoryParameter = true;
-    }
-  }
-
   Future<bool> isCurrentUserSuperuser({bool forceRefresh = false}) async {
-    await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
+    if (!forceRefresh && _cachedIsSuperuser != null) {
+      return _cachedIsSuperuser!;
+    }
+    await _fetchSessionAndUserInfo(forceRefresh: forceRefresh);
     return _cachedIsSuperuser ?? false;
   }
 
   Future<bool> canCurrentUserCreateRole({bool forceRefresh = false}) async {
-    await _fetchCurrentUserInfo(forceRefresh: forceRefresh);
+    if (!forceRefresh && _cachedCanCreateRole != null) {
+      return _cachedCanCreateRole!;
+    }
+    await _fetchSessionAndUserInfo(forceRefresh: forceRefresh);
     return _cachedCanCreateRole ?? false;
   }
 
-  Future<bool> canCurrentUserSetCategoryParameter({bool forceRefresh = false}) async {
-    return _cachedCanSetCategoryParameter ?? true;
-  }
-
-  Future<void> setupRoleAdmin(String adminName, String adminPass) async {
+  Future<void> setupRoleAdmin(
+    String adminName,
+    String adminPass, {
+    bool grantAdminOption = true,
+  }) async {
     final pool = _getPool();
     await pool.withConnection((conn) async {
       // 1. Check if role exists
@@ -252,46 +280,58 @@ class DatabaseService {
       // 3. Set standard description
       await conn.execute('COMMENT ON ROLE $safeAdmin IS ${escapeLiteral('grant and revoke roles to users')}');
 
-      // 4. Grant ADMIN OPTION on all non-login roles (groups)
-      // We skip system roles (pg_*, rds_*, cloudsql*, azure_*) because some do not allow members.
-      final groupsResult = await conn.execute(
-        "SELECT rolname FROM pg_roles WHERE rolcanlogin = false AND rolname NOT LIKE 'pg_%' AND rolname NOT LIKE 'rds%' AND rolname NOT LIKE 'cloudsql%' AND rolname NOT LIKE 'azure_%'",
-      );
-      for (final row in groupsResult) {
-        final groupName = row[0] as String;
-        try {
-          await conn.execute('GRANT ${escapeIdentifier(groupName)} TO $safeAdmin WITH ADMIN OPTION');
-        } catch (_) {
-          // Ignore provider-managed roles that cannot be granted WITH ADMIN OPTION
+      // 4. Optionally grant ADMIN OPTION on all existing non-superuser users and roles
+      // We skip superusers, the admin role itself, and system/provider roles (pg_*, rds_*, cloudsql*, azure_*).
+      if (grantAdminOption) {
+        final rolesResult = await conn.execute(
+          r"SELECT rolname FROM pg_roles WHERE rolsuper = false AND rolname <> $1 AND rolname NOT LIKE 'pg_%' AND rolname NOT LIKE 'rds%' AND rolname NOT LIKE 'cloudsql%' AND rolname NOT LIKE 'azure_%'",
+          parameters: [adminName],
+        );
+        for (final row in rolesResult) {
+          final targetRoleName = row[0] as String;
+          try {
+            await conn.execute(
+              'GRANT ${escapeIdentifier(targetRoleName)} TO $safeAdmin WITH ADMIN TRUE, INHERIT FALSE, SET FALSE',
+            );
+          } catch (_) {
+            // Ignore provider-managed roles that cannot be granted WITH ADMIN OPTION
+          }
         }
       }
     });
 
-    // Bulk update: easier to just re-fetch everything as many roles may have been affected
-    await fetchAllRoles(forceRefresh: true);
-    _cachedGroupCatalog = null;
-    _cachedUserMemberships.clear();
+    // Bulk update: clear cache as many roles may have been affected
+    clearCache();
   }
 
   void clearCache() {
     _cachedRoles = null;
+    _inFlightRolesFuture = null;
     _cachedGroupCatalog = null;
     _cachedUserMemberships.clear();
-    _cachedCanSetCategoryParameter = null;
   }
 
   Future<List<PgRole>> fetchAllRoles({bool forceRefresh = false}) async {
-    if (forceRefresh || _cachedRoles == null) {
-      _cachedRoles = await _queryRoles(forceRefresh: forceRefresh);
-      final current = _cachedRoles!.where((r) => r.isCurrent).firstOrNull;
+    if (!forceRefresh && _cachedRoles != null) {
+      return _cachedRoles!;
+    }
+    if (_inFlightRolesFuture != null) {
+      return _inFlightRolesFuture!;
+    }
+    final future = _queryRoles().then((roles) {
+      _cachedRoles = roles;
+      final current = roles.where((r) => r.isCurrent).firstOrNull;
       if (current != null) {
         _cachedCurrentUserOid = current.oid;
         _cachedIsSuperuser = current.isSuperuser;
         _cachedCanCreateRole = current.isSuperuser || current.createRole;
-        _cachedCanSetCategoryParameter = true;
       }
-    }
-    return _cachedRoles!;
+      return roles;
+    }).whenComplete(() {
+      _inFlightRolesFuture = null;
+    });
+    _inFlightRolesFuture = future;
+    return future;
   }
 
   Future<PgRole?> fetchCurrentUserRole({bool forceRefresh = false}) async {
@@ -311,13 +351,12 @@ class DatabaseService {
     return results.isEmpty ? null : results.first;
   }
 
-  Future<List<PgRole>> _queryRoles({String? name, bool forceRefresh = false}) async {
+  Future<List<PgRole>> _queryRoles({String? name}) async {
     final pool = _getPool();
     final result = await pool.execute(
       '''
       WITH me AS (
           SELECT 
-              current_setting('is_superuser') = 'on' AS is_super,
               rolcreaterole AS can_create
           FROM pg_catalog.pg_roles
           WHERE rolname = CURRENT_USER
@@ -335,15 +374,18 @@ class DatabaseService {
               r.rolbypassrls AS bypass_rls,
               (CURRENT_USER = r.rolname) AS is_current,
               pg_catalog.shobj_description(r.oid, 'pg_authid') AS description,
-              (
-                  me.is_super
-                  OR EXISTS (
-                      SELECT 1 FROM pg_catalog.pg_auth_members m
-                      WHERE m.roleid = r.oid
-                        AND m.member = CURRENT_USER::regrole::oid
-                        AND m.admin_option = true
-                  )
+              EXISTS (
+                  SELECT 1 FROM pg_catalog.pg_auth_members m
+                  WHERE m.roleid = r.oid
+                    AND m.member = CURRENT_USER::regrole::oid
+                    AND m.admin_option = true
               ) AS is_admin,
+              NOT EXISTS (
+                  SELECT 1 FROM pg_catalog.pg_auth_members m
+                  WHERE m.member = r.oid
+                    AND m.grantor IS NOT NULL
+                    AND m.grantor <> CURRENT_USER::regrole::oid
+              ) AS no_external_grantors,
               CASE
                   WHEN r.rolvaliduntil IS NOT NULL AND isfinite(r.rolvaliduntil)
                   THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
@@ -355,7 +397,6 @@ class DatabaseService {
                   AND r.rolvaliduntil > CURRENT_TIMESTAMP
                   AND r.rolvaliduntil <= CURRENT_TIMESTAMP + INTERVAL '7 days'
               ) AS is_expiring_soon,
-              me.is_super,
               me.can_create
           FROM pg_catalog.pg_roles r
           CROSS JOIN me
@@ -374,11 +415,21 @@ class DatabaseService {
           is_current,
           description,
           is_admin,
-          (is_admin AND (is_super OR can_create)) AS can_drop,
+          (
+              is_admin
+              AND can_create
+              AND NOT is_superuser
+              AND NOT create_role
+              AND NOT create_db
+              AND NOT replication
+              AND NOT bypass_rls
+              AND no_external_grantors
+          ) AS can_drop,
           valid_until,
           is_valid,
           is_expiring_soon
       FROM user_roles
+      ${name == null ? 'WHERE (is_admin AND NOT is_superuser) OR is_current' : ''}
       ORDER BY is_valid DESC, LOWER(name) ASC
     ''',
       parameters: name != null ? [name] : null,
@@ -388,18 +439,14 @@ class DatabaseService {
 
   Future<String> fetchClusterName() async {
     if (_cachedClusterName != null) return _cachedClusterName!;
-    
-    final pool = _getPool();
-    final result = await pool.execute("SELECT current_setting('cluster_name')");
-    _cachedClusterName = result.first[0] as String;
-    return _cachedClusterName!;
+    await _fetchSessionAndUserInfo();
+    return _cachedClusterName ?? '';
   }
 
   Future<bool> fetchSslStatus() async {
-    final pool = _getPool();
-    final result = await pool.execute("SELECT ssl FROM pg_stat_ssl WHERE pid = pg_backend_pid()");
-    if (result.isEmpty) return false;
-    return result.first[0] as bool;
+    if (_cachedSslStatus != null) return _cachedSslStatus!;
+    await _fetchSessionAndUserInfo();
+    return _cachedSslStatus ?? false;
   }
 
   Future<List<PgUserGroup>> _fetchGroupCatalog({bool forceRefresh = false}) async {
@@ -407,42 +454,30 @@ class DatabaseService {
       return _cachedGroupCatalog!;
     }
 
-    final pool = _getPool();
-    final result = await pool.execute(
-      r'''
-      SELECT 
-          g.oid::int,
-          g.rolname AS name,
-          pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
-          '{}'::text[] AS grantors,
-          (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
-          false AS granted
-      FROM pg_catalog.pg_roles g
-      LEFT JOIN pg_catalog.pg_auth_members me
-          ON g.oid = me.roleid
-         AND me.member = CURRENT_USER::regrole::oid
-         AND me.admin_option = true
-      WHERE NOT g.rolcanlogin
-      GROUP BY g.oid, g.rolname
-      ORDER BY LOWER(g.rolname) ASC;
-      ''',
-    );
-
+    final roles = await fetchAllRoles(forceRefresh: forceRefresh);
     final categories = await loadRoleCategories();
-    final groups = result.map((row) {
-      final group = PgUserGroup.fromRow(row);
-      final cat = categories[group.name];
-      return cat != null ? group.copyWith(category: cat) : group;
-    }).toList();
-    groups.sort(compareGroups);
+    final ungroupedTemplate = await loadUngroupedCategoryTemplate();
+    final groups = roles.where((r) => !r.canLogin && r.isAdmin).map((r) {
+      return PgUserGroup(
+        oid: r.oid,
+        name: r.name,
+        description: r.description,
+        grantors: const [],
+        grantable: r.isAdmin,
+        granted: false,
+        category: categories[r.name],
+        ungroupedTemplate: ungroupedTemplate,
+      );
+    }).toList()
+      ..sort(compareGroups);
 
     _cachedGroupCatalog = groups;
     return _cachedGroupCatalog!;
   }
 
   static int compareGroups(PgUserGroup a, PgUserGroup b) {
-    final orderA = a.categoryOrder;
-    final orderB = b.categoryOrder;
+    final orderA = a.effectiveCategoryOrder;
+    final orderB = b.effectiveCategoryOrder;
     if (orderA != null && orderB != null && orderA != orderB) {
       return orderA.compareTo(orderB);
     } else if (orderA != null && orderB == null) {
@@ -450,15 +485,16 @@ class DatabaseService {
     } else if (orderA == null && orderB != null) {
       return 1;
     }
-    final catA = a.categoryName?.toLowerCase();
-    final catB = b.categoryName?.toLowerCase();
-    if (catA != null && catB != null) {
-      final cmp = catA.compareTo(catB);
-      if (cmp != 0) return cmp;
-    } else if (catA != null) {
-      return -1;
-    } else if (catB != null) {
-      return 1;
+    if (a.isDefaultUngrouped != b.isDefaultUngrouped) {
+      return a.isDefaultUngrouped ? 1 : -1;
+    }
+    if (!a.isDefaultUngrouped && !b.isDefaultUngrouped) {
+      final catA = a.categoryName?.toLowerCase();
+      final catB = b.categoryName?.toLowerCase();
+      if (catA != null && catB != null) {
+        final cmp = catA.compareTo(catB);
+        if (cmp != 0) return cmp;
+      }
     }
     return a.name.toLowerCase().compareTo(b.name.toLowerCase());
   }

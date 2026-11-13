@@ -1,9 +1,8 @@
 import 'dart:ui';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:user_manager/models/pg_membership.dart';
 import 'package:user_manager/models/pg_role.dart';
 import 'package:user_manager/views/role_management_widget.dart';
 import 'package:user_manager/views/role_manager_home.dart';
@@ -67,15 +66,8 @@ void main() {
       'db_port': 5432,
       'db_user': 'test_admin',
       'db_pass': '',
-      'showSystemRoles': false,
-      'showSuperusers': false,
       'showDescriptions': true,
       'showFilters': false,
-      'showRolesAsUsers': false,
-      'showConnectedUser': false,
-      'showUngrantableRoles': true,
-      'showUngrantableUsers': true,
-      'showUsersWithoutAdminOption': true,
     });
   });
 
@@ -157,7 +149,7 @@ void main() {
       final fakeDb = FakeDatabaseService(
         roles: List.from(initialRoles),
         memberships: [
-          PgMembership(
+          (
             roleOid: 201,
             memberOid: 101, // alice has developers
             grantor: 'test_admin',
@@ -271,7 +263,6 @@ void main() {
               onToggleRole: (_, _) async {},
               isLoading: false,
               roleSearchController: TextEditingController(),
-              showSystemRoles: false,
               showDescriptions: false,
               showFilters: false,
               currentUsername: 'test_admin',
@@ -381,8 +372,8 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      final initialMemberships = [
-        PgMembership(
+      final initialMemberships = <MockMembership>[
+        (
           roleOid: 201, // developers
           memberOid: 101, // alice
           grantor: 'daniel',

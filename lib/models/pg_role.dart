@@ -1,20 +1,38 @@
-class PgRole {
-  final int oid;
-  final String name;
-  final bool isSuperuser;
-  final bool inherit;
-  final bool createRole;
-  final bool createDb;
-  final bool canLogin;
-  final bool replication;
-  final bool bypassRls;
-  final bool isCurrent;
-  final String? description;
-  final bool isAdmin;
-  final bool canDrop;
-  final DateTime? validUntil;
-  final bool isValid;
-  final bool isExpiringSoon;
+class PgRole({
+  required final int oid,
+  required final String name,
+  final bool isSuperuser = false,
+  final bool inherit = true,
+  final bool createRole = false,
+  final bool createDb = false,
+  final bool canLogin = true,
+  final bool replication = false,
+  final bool bypassRls = false,
+  final bool isCurrent = false,
+  final String? description,
+  bool isAdmin = false,
+  bool canDrop = false,
+  bool? canManage,
+  DateTime? validUntil,
+  bool? isValid,
+  bool? isExpiringSoon,
+}) {
+  final bool isAdmin = canManage ?? isAdmin;
+  final bool canDrop = canDrop &&
+      !isSuperuser &&
+      !createRole &&
+      !createDb &&
+      !replication &&
+      !bypassRls;
+  final DateTime? validUntil = validUntil != null
+      ? DateTime(validUntil.year, validUntil.month, validUntil.day)
+      : null;
+  final bool isValid = isValid ?? _defaultIsValid(validUntil);
+  final bool isExpiringSoon = isExpiringSoon ??
+      _defaultIsExpiringSoon(
+        validUntil,
+        isValid ?? _defaultIsValid(validUntil),
+      );
   bool get canManage => isAdmin;
 
   /// Formats a [DateTime] as an ISO date string ('YYYY-MM-DD').
@@ -44,35 +62,6 @@ class PgRole {
     return target.isAfter(now) && !target.isAfter(threshold);
   }
 
-  PgRole({
-    required this.oid,
-    required this.name,
-    this.isSuperuser = false,
-    this.inherit = true,
-    this.createRole = false,
-    this.createDb = false,
-    this.canLogin = true,
-    this.replication = false,
-    this.bypassRls = false,
-    this.isCurrent = false,
-    this.description,
-    bool isAdmin = false,
-    this.canDrop = false,
-    bool? canManage,
-    DateTime? validUntil,
-    bool? isValid,
-    bool? isExpiringSoon,
-  })  : isAdmin = canManage ?? isAdmin,
-        validUntil = validUntil != null
-            ? DateTime(validUntil.year, validUntil.month, validUntil.day)
-            : null,
-        isValid = isValid ?? _defaultIsValid(validUntil),
-        isExpiringSoon = isExpiringSoon ??
-            _defaultIsExpiringSoon(
-              validUntil,
-              isValid ?? _defaultIsValid(validUntil),
-            );
-
   static DateTime? _parseValidUntil(dynamic raw) {
     if (raw == null) return null;
     if (raw is DateTime) {
@@ -87,7 +76,7 @@ class PgRole {
     return null;
   }
 
-  factory PgRole.fromRow(List<dynamic> row) {
+  factory fromRow(List<dynamic> row) {
     final bool isAdmin;
     final bool canDrop;
     if (row.length > 12) {

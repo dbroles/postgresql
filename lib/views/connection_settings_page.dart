@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:postgres/postgres.dart';
 import '../services/database_service.dart';
@@ -8,23 +8,14 @@ import 'connection_status_bar.dart';
 import 'create_role_admin_dialog.dart';
 import 'role_admin_success_dialog.dart';
 
-class SavedConnectionProfile {
-  final String host;
-  final int port;
-  final String database;
-  final String username;
-  final bool useSsl;
-  final bool rememberPassword;
-
-  const SavedConnectionProfile({
-    required this.host,
-    required this.port,
-    required this.database,
-    required this.username,
-    required this.useSsl,
-    required this.rememberPassword,
-  });
-
+class const SavedConnectionProfile({
+  required final String host,
+  required final int port,
+  required final String database,
+  required final String username,
+  required final bool useSsl,
+  required final bool rememberPassword,
+}) {
   String get key => CredentialStorageService.connectionStorageKey(
         host: host,
         port: port,
@@ -48,7 +39,7 @@ class SavedConnectionProfile {
         'rememberPassword': rememberPassword,
       };
 
-  factory SavedConnectionProfile.fromJson(Map<String, dynamic> json) {
+  factory fromJson(Map<String, dynamic> json) {
     return SavedConnectionProfile(
       host: (json['host'] as String?) ?? 'localhost',
       port: (json['port'] as int?) ?? 5432,
@@ -69,17 +60,12 @@ typedef DatabaseServiceFactory = DatabaseService Function({
   SslMode sslMode,
 });
 
-class ConnectionSettingsPage extends StatefulWidget {
-  final DatabaseService dbService;
-  final CredentialStorageService? credentialStorage;
-  final DatabaseServiceFactory? databaseServiceFactory;
-
-  const ConnectionSettingsPage({
-    super.key,
-    required this.dbService,
-    this.credentialStorage,
-    this.databaseServiceFactory,
-  });
+class const ConnectionSettingsPage({
+  super.key,
+  required final DatabaseService dbService,
+  final CredentialStorageService? credentialStorage,
+  final DatabaseServiceFactory? databaseServiceFactory,
+}) extends StatefulWidget {
 
   @override
   State<ConnectionSettingsPage> createState() => _ConnectionSettingsPageState();
@@ -213,7 +199,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
       database: _dbController.text.trim().isEmpty ? 'postgres' : _dbController.text.trim(),
       username: _userController.text.trim(),
       password: _passController.text, // Don't trim password
-      sslMode: _useSsl ? SslMode.require : SslMode.disable,
+      sslMode: _useSsl ? .require : .disable,
     );
 
     final error = await testService.testConnection();
@@ -246,7 +232,7 @@ class _ConnectionSettingsPageState extends State<ConnectionSettingsPage> {
       database: database,
       username: username,
       password: password,
-      sslMode: _useSsl ? SslMode.require : SslMode.disable,
+      sslMode: _useSsl ? .require : .disable,
     );
 
     final error = await tempService.testConnection();

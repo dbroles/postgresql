@@ -1,24 +1,18 @@
 import 'dart:math';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 import '../services/database_service.dart';
 
-class CreateUserDialog extends StatefulWidget {
-  final DatabaseService dbService;
-  final PgRole? initialUser;
-  final bool isDuplicate;
-  final List<PgUserGroup>? rolesToCopy;
-
-  const CreateUserDialog({
-    super.key,
-    required this.dbService,
-    this.initialUser,
-    this.isDuplicate = false,
-    this.rolesToCopy,
-  });
+class const CreateUserDialog({
+  super.key,
+  required final DatabaseService dbService,
+  final PgRole? initialUser,
+  final bool isDuplicate = false,
+  final List<PgUserGroup>? rolesToCopy,
+}) extends StatefulWidget {
 
   @override
   State<CreateUserDialog> createState() => _CreateUserDialogState();
@@ -268,7 +262,7 @@ class _CreateUserDialogState extends State<CreateUserDialog> {
                 ),
                 Expanded(
                   child: CupertinoDatePicker(
-                    mode: CupertinoDatePickerMode.date,
+                    mode: .date,
                     initialDateTime: initialDate,
                     minimumDate: firstDate,
                     maximumDate: lastDate,

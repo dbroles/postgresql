@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:postgres/postgres.dart';
@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:user_manager/services/credential_storage_service.dart';
 import 'package:user_manager/views/connection_settings_page.dart';
 import 'package:user_manager/views/connection_status_bar.dart';
+import 'package:user_manager/views/create_role_admin_dialog.dart';
 
 import '../fakes/fake_database_service.dart';
 
@@ -392,6 +393,75 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       final scrolledTopLeft = tester.getTopLeft(textFinder);
       expect(scrolledTopLeft.dx, lessThan(initialTopLeft.dx));
+    });
+  });
+
+  group('CreateRoleAdminDialog Bootstrap ADMIN OPTION Checkbox Tests', () {
+    testWidgets('defaults Grant ADMIN OPTION checkbox to checked and passes grantAdminOption: true', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateRoleAdminDialog(dbService: fakeDb),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final checkboxFinder = find.widgetWithText(
+        CheckboxListTile,
+        'Grant ADMIN OPTION on existing users and roles',
+      );
+      expect(checkboxFinder, findsOneWidget);
+
+      final checkbox = tester.widget<CheckboxListTile>(checkboxFinder);
+      expect(checkbox.value, isTrue);
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Admin Password'),
+        'admin_secret_123',
+      );
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Setup Admin'));
+      await tester.pumpAndSettle();
+
+      expect(fakeDb.setupRoleAdminCalls, 1);
+      expect(fakeDb.lastSetupAdminName, 'dbroles');
+      expect(fakeDb.lastSetupAdminPass, 'admin_secret_123');
+      expect(fakeDb.lastSetupGrantAdminOption, isTrue);
+    });
+
+    testWidgets('unchecking Grant ADMIN OPTION checkbox passes grantAdminOption: false', (WidgetTester tester) async {
+      final fakeDb = FakeDatabaseService();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateRoleAdminDialog(dbService: fakeDb),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final checkboxFinder = find.widgetWithText(
+        CheckboxListTile,
+        'Grant ADMIN OPTION on existing users and roles',
+      );
+      await tester.tap(checkboxFinder);
+      await tester.pumpAndSettle();
+
+      final checkbox = tester.widget<CheckboxListTile>(checkboxFinder);
+      expect(checkbox.value, isFalse);
+
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Admin Password'),
+        'admin_secret_123',
+      );
+      await tester.tap(find.widgetWithText(ElevatedButton, 'Setup Admin'));
+      await tester.pumpAndSettle();
+
+      expect(fakeDb.setupRoleAdminCalls, 1);
+      expect(fakeDb.lastSetupGrantAdminOption, isFalse);
     });
   });
 }

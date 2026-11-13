@@ -1,72 +1,104 @@
 import 'dart:ui';
 
-class PgUserGroup {
-  final int oid;
-  final String name;
-  final String? description;
-  final List<String> grantors;
-  final bool grantable;
-  bool granted;
-  final String? category;
+typedef ParsedCategory = ({
+  String? name,
+  int? order,
+  String? colorHex,
+  Color? color,
+});
+
+class PgUserGroup({
+  required final int oid,
+  required final String name,
+  final String? description,
+  required final List<String> grantors,
+  required final bool grantable,
+  required var bool granted,
+  final String? category,
+  final String ungroupedTemplate = defaultUngroupedTemplate,
+}) {
+  static const String defaultUngroupedName = 'Ungrouped';
+  static const String defaultUngroupedColorHex = '88AA00';
+  static const Color defaultUngroupedColor = Color(0xFF88AA00);
+  static const String defaultUngroupedTemplate =
+      '$defaultUngroupedName::$defaultUngroupedColorHex';
+
+  final ParsedCategory _parsedCategory = parseCategory(category);
+  final ParsedCategory _parsedUngrouped = parseCategory(ungroupedTemplate);
+
+  /// Whether this role has no custom category assigned and belongs to the default Ungrouped group.
+  bool get isDefaultUngrouped => _parsedCategory.name == null;
 
   /// Pre-parsed human-readable category name from format "name[:order[:color]]"
-  final String? categoryName;
+  String? get categoryName => _parsedCategory.name;
 
   /// Pre-parsed numeric sort order if present
-  final int? categoryOrder;
+  int? get categoryOrder => _parsedCategory.order;
 
   /// Pre-parsed 6-character hex color string (without '#') if present
-  final String? categoryColorHex;
+  String? get categoryColorHex => _parsedCategory.colorHex;
 
   /// Pre-parsed [Color] from [categoryColorHex], or null if invalid/not provided
-  final Color? categoryColor;
+  Color? get categoryColor => _parsedCategory.color;
 
-  PgUserGroup({
-    required this.oid,
-    required this.name,
-    this.description,
-    required this.grantors,
-    required this.grantable,
-    required this.granted,
-    this.category,
-  })  : categoryName = _parseCategoryName(category),
-        categoryOrder = _parseCategoryOrder(category),
-        categoryColorHex = _parseCategoryColorHex(category),
-        categoryColor = _parseCategoryColor(_parseCategoryColorHex(category));
+  /// Effective category display name (falls back to [ungroupedTemplate] when [isDefaultUngrouped]).
+  String get effectiveCategoryName =>
+      _parsedCategory.name ?? _parsedUngrouped.name ?? defaultUngroupedName;
 
-  static String? _parseCategoryName(String? category) {
-    if (category == null || category.isEmpty) return null;
-    final colonIdx = category.indexOf(':');
-    final rawName = colonIdx == -1 ? category : category.substring(0, colonIdx);
-    final trimmed = rawName.trim();
-    return trimmed.isNotEmpty ? trimmed : null;
-  }
+  /// Effective numeric sort order (falls back to [ungroupedTemplate] order when [isDefaultUngrouped]).
+  int? get effectiveCategoryOrder =>
+      isDefaultUngrouped ? _parsedUngrouped.order : _parsedCategory.order;
 
-  static int? _parseCategoryOrder(String? category) {
-    if (category == null || category.isEmpty) return null;
-    final firstColon = category.indexOf(':');
-    if (firstColon == -1) return null;
-    final secondColon = category.indexOf(':', firstColon + 1);
-    final rawOrder = secondColon == -1
-        ? category.substring(firstColon + 1)
-        : category.substring(firstColon + 1, secondColon);
-    return int.tryParse(rawOrder.trim());
-  }
+  /// Effective 6-character hex color (falls back to [ungroupedTemplate] / `#88AA00` when [isDefaultUngrouped]).
+  String? get effectiveCategoryColorHex => isDefaultUngrouped
+      ? (_parsedUngrouped.colorHex ?? defaultUngroupedColorHex)
+      : _parsedCategory.colorHex;
 
-  static String? _parseCategoryColorHex(String? category) {
-    if (category == null || category.isEmpty) return null;
-    final firstColon = category.indexOf(':');
-    if (firstColon == -1) return null;
-    final secondColon = category.indexOf(':', firstColon + 1);
-    if (secondColon == -1) return null;
-    var hex = category.substring(secondColon + 1).trim();
+  /// Effective [Color] (falls back to [ungroupedTemplate] / `Color(0xFF88AA00)` when [isDefaultUngrouped]).
+  Color? get effectiveCategoryColor => isDefaultUngrouped
+      ? (_parsedUngrouped.color ?? defaultUngroupedColor)
+      : _parsedCategory.color;
+
+  /// Parses a category string of format `"name[:order[:color]]"` in a single pass
+  /// using Dart 3 list pattern matching.
+  static ParsedCategory parseCategory(String? category) {
+    if (category == null || category.isEmpty) {
+      return (name: null, order: null, colorHex: null, color: null);
+    }
+    final (rawName, rawOrder, rawColor) = switch (category.split(':')) {
+      [final n, final o, final c, ...final rest] => (
+        n,
+        o,
+        rest.isEmpty ? c : [c, ...rest].join(':'),
+      ),
+      [final n, final o] => (n, o, null),
+      [final n] => (n, null, null),
+      [] => ('', null, null),
+    };
+    final trimmedName = rawName.trim();
+    final name = trimmedName.isNotEmpty ? trimmedName : null;
+    final order = rawOrder != null ? int.tryParse(rawOrder.trim()) : null;
+    var hex = rawColor?.trim() ?? '';
     if (hex.startsWith('#')) hex = hex.substring(1);
-    return hex.isNotEmpty ? hex : null;
+    final colorHex = hex.isNotEmpty ? hex : null;
+    return (
+      name: name,
+      order: order,
+      colorHex: colorHex,
+      color: parseCategoryColor(colorHex),
+    );
   }
 
-  static Color? _parseCategoryColor(String? hex) {
+  /// Canonical lower-cased category name key for deduplication and matching.
+  static String? categoryKey(String? category) =>
+      parseCategory(category).name?.toLowerCase();
+
+  static Color? parseCategoryColor(String? hex) {
     if (hex == null) return null;
-    final cleanHex = hex.length == 6 ? 'FF$hex' : hex;
+    var trimmed = hex.trim();
+    if (trimmed.startsWith('#')) trimmed = trimmed.substring(1);
+    if (trimmed.isEmpty) return null;
+    final cleanHex = trimmed.length == 6 ? 'FF$trimmed' : trimmed;
     final val = int.tryParse(cleanHex, radix: 16);
     return val != null ? Color(val) : null;
   }
@@ -114,7 +146,7 @@ class PgUserGroup {
     return trimmedName;
   }
 
-  factory PgUserGroup.fromRow(List<dynamic> row) {
+  factory fromRow(List<dynamic> row) {
     final parsedGrantors = parseGrantors(row[3]);
 
     final rawCategory = row.length > 6 ? (row[6] as String?)?.trim() : null;
@@ -139,6 +171,7 @@ class PgUserGroup {
     bool? grantable,
     bool? granted,
     String? category,
+    String? ungroupedTemplate,
     bool clearCategory = false,
   }) {
     return PgUserGroup(
@@ -149,6 +182,7 @@ class PgUserGroup {
       grantable: grantable ?? this.grantable,
       granted: granted ?? this.granted,
       category: clearCategory ? null : (category ?? this.category),
+      ungroupedTemplate: ungroupedTemplate ?? this.ungroupedTemplate,
     );
   }
 

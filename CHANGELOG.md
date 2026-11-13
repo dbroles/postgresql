@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-11-13
+
+### Added
+- **Default "Ungrouped" Category**:
+  - Roles without a custom category are grouped under the default **Ungrouped** (`#88AA00`) section, supporting custom renaming, color changes, and drag-and-drop reordering in Settings (`ungrouped_category_template_<host>:<login>:<database>`), and automatically hiding when all roles are categorized.
+- **Role Admin Bootstrapping Delegation**:
+  - Added a **"Grant ADMIN OPTION on existing users and roles"** option (checked by default) in `CreateRoleAdminDialog` to delegate existing non-superuser, non-system roles during setup.
+- **Theme Mode & Search Shortcuts**:
+  - Added **Theme** selector (`System`, `Light`, `Dark`) in General Preferences.
+  - Added AppBar search toggle (`Cmd+F` / `Ctrl+F`, `Esc` to close).
+- **AWS RDS Integration Test**:
+  - Added `test/integration/live_aws_rds_test.dart` covering SSL connections, role/user lifecycle, `can_drop` evaluation, and per-connection category scoping against live AWS RDS PostgreSQL.
+
+### Changed
+- **Database-First `can_drop` Evaluation**:
+  - Moved the full Delete User eligibility check (entitlement, no elevated attributes, and `NOT EXISTS` external grantors across all `pg_catalog.pg_auth_members` rows) into PostgreSQL SQL (`_queryRoles`), removing `is_super` dead logic and redundant client-side checks so both desktop and mobile pull-to-refresh stay accurate.
+- **Strict `ADMIN OPTION` Visibility & Simplified Settings**:
+  - Permanently scoped visible users and roles to those where the connected user holds `ADMIN OPTION` (excluding superusers and the current user), replacing legacy visibility toggles in Settings.
+- **Dart 3.14 & Flutter 3.50 Refactor**:
+  - Updated codebase to Dart 3.14 / Flutter 3.50 patterns, removed unused `PgMembership` model, and improved responsive dialog sizing for compact/tablet screens.
+
+---
+
 ## [1.1.0] - 2026-11-04
 
 ### Added

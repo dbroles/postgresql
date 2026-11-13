@@ -92,7 +92,6 @@ The query to select the users is:
 ```sql
 WITH me AS (
     SELECT 
-        current_setting('is_superuser') = 'on' AS is_super,
         rolcreaterole AS can_create
     FROM pg_catalog.pg_roles
     WHERE rolname = CURRENT_USER
@@ -110,15 +109,18 @@ user_roles AS (
         r.rolbypassrls AS bypass_rls,
         (CURRENT_USER = r.rolname) AS is_current,
         pg_catalog.shobj_description(r.oid, 'pg_authid') AS description,
-        (
-            me.is_super
-            OR EXISTS (
-                SELECT 1 FROM pg_catalog.pg_auth_members m
-                WHERE m.roleid = r.oid
-                  AND m.member = CURRENT_USER::regrole::oid
-                  AND m.admin_option = true
-            )
+        EXISTS (
+            SELECT 1 FROM pg_catalog.pg_auth_members m
+            WHERE m.roleid = r.oid
+              AND m.member = CURRENT_USER::regrole::oid
+              AND m.admin_option = true
         ) AS is_admin,
+        NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_auth_members m
+            WHERE m.member = r.oid
+              AND m.grantor IS NOT NULL
+              AND m.grantor <> CURRENT_USER::regrole::oid
+        ) AS no_external_grantors,
         CASE
             WHEN r.rolvaliduntil IS NOT NULL AND isfinite(r.rolvaliduntil)
             THEN to_char(r.rolvaliduntil, 'YYYY-MM-DD')
@@ -130,7 +132,6 @@ user_roles AS (
             AND r.rolvaliduntil > CURRENT_TIMESTAMP
             AND r.rolvaliduntil <= CURRENT_TIMESTAMP + INTERVAL '7 days'
         ) AS is_expiring_soon,
-        me.is_super,
         me.can_create
     FROM pg_catalog.pg_roles r
     CROSS JOIN me
@@ -149,11 +150,21 @@ SELECT
     is_current,
     description,
     is_admin,
-    (is_admin AND (is_super OR can_create)) AS can_drop,
+    (
+        is_admin
+        AND can_create
+        AND NOT is_superuser
+        AND NOT create_role
+        AND NOT create_db
+        AND NOT replication
+        AND NOT bypass_rls
+        AND no_external_grantors
+    ) AS can_drop,
     valid_until,
     is_valid,
     is_expiring_soon
 FROM user_roles
+WHERE (is_admin AND NOT is_superuser) OR is_current
 ORDER BY is_valid DESC, LOWER(name) ASC;
 ```
 
@@ -164,7 +175,7 @@ SELECT
     g.rolname AS name,
     pg_catalog.shobj_description(g.oid, 'pg_authid') AS description,
     '{}'::text[] AS grantors,
-    (COALESCE(bool_or(me.admin_option), false) OR current_setting('is_superuser') = 'on') AS grantable,
+    COALESCE(bool_or(me.admin_option), false) AS grantable,
     false AS granted
 FROM pg_catalog.pg_roles g
 LEFT JOIN pg_catalog.pg_auth_members me
@@ -212,10 +223,10 @@ The application determines which actions and settings are visible based on the p
   - Displays all roles currently assigned to the source user, with grantable roles pre-selected, allowing the admin to easily customize which role memberships are copied to the new user.
 
 ### 4. Delete User (AppBar Delete Icon)
-- **Visible when all three conditions are met**:
-  1. **PostgreSQL Entitlement (`user.canDrop = true`)**: The connected account has `CREATEROLE` **and** `ADMIN OPTION` on the selected user (`is_admin AND (is_super OR can_create)`).
-  2. **No Elevated Attributes**: The selected user does **not** have any special privileges (`!isSuperuser`, `!createRole`, `!createDb`, `!replication`, `!bypassRls`).
-  3. **No External Grantors**: None of the selected user's assigned roles were granted by another grantor (`grantors.isEmpty`).
+- **Visible when `user.canDrop = true`** (evaluated directly in SQL when fetching roles, where all three conditions must be met):
+  1. **PostgreSQL Entitlement**: The connected account has `CREATEROLE` **and** `ADMIN OPTION` on the selected user (`is_admin AND can_create`).
+  2. **No Elevated Attributes**: The selected user does **not** have any special privileges (`NOT is_superuser AND NOT create_role AND NOT create_db AND NOT replication AND NOT bypass_rls`).
+  3. **No External Grantors**: None of the selected user's assigned roles in `pg_catalog.pg_auth_members` (including roles the connected admin does not manage) were granted by another grantor (`no_external_grantors`).
 
 ### 5. Grant / Revoke Role (Role Checkbox)
 - **Enabled when**: The connected account has `ADMIN OPTION` on that role (`group.grantable = true`).
@@ -227,6 +238,10 @@ The application determines which actions and settings are visible based on the p
     - Role-to-category assignments (`role_categories_<host>:<login>:<database>`) and custom category templates (`savedRoleCategoryTemplates_<host>:<login>:<database>`) are persisted locally in application `SharedPreferences` scoped to the active `host:login:database` tuple.
     - **Why this was chosen**: On managed DBaaS platforms (AWS RDS, Google Cloud SQL, Azure, Neon, Supabase), the master administrative account (`rds_superuser`, `cloudsqlsuperuser`, etc.) has `rolsuper = false`. PostgreSQL's C implementation of `GRANT SET ON PARAMETER` and `ALTER ROLE ... SET <custom_parameter>` strictly requires true C-level `superuser()` (`rolsuper = true`) for custom parameters. Storing categories locally in `SharedPreferences` per `host:login:database` eliminates any PostgreSQL custom parameter setup while providing full multi-tenant isolation per host, login account, and database.
   - **Clean Role View**: Role rows on the main user membership page (`RoleManagementWidget`) remain uncluttered and focused strictly on granting/revoking roles for users.
+  - **Default "Ungrouped" (`#88AA00`) Category**:
+    - Any role not assigned to a custom category belongs to the default **Ungrouped** (`#88AA00`) group.
+    - Supports **Edit (✎)** (e.g., renaming for localization, changing its color, or pulling roles from other categories back into Ungrouped) and **Drag-and-Drop Reordering (≡)**, persisted per `host:login:database` (`ungrouped_category_template_<host>:<login>:<database>`).
+    - **Cannot be deleted** (no delete action) and is **automatically hidden** in both the main role view and Settings when all roles are assigned to custom categories.
   - **Drag-and-Drop Reordering**: Categories can be dragged and reordered directly in Settings. Reordering automatically assigns the new 1-based numeric sort order (`1`, `2`, `3`...) and updates the category across all member roles.
   - **Category Editing & Role Assignment (✎)**:
     - Edit category name and color.
@@ -243,8 +258,14 @@ The application determines which actions and settings are visible based on the p
   - Roles are sorted by custom numeric order first (`ASC NULLS LAST`), then category name alphabetically, then role name.
   - Section headers display category color accents and count badges.
 
-### 7. Attribute Assignment & Superuser Safety Rules
-- **No Superuser Connections**: Superusers are prohibited from connecting with this application. On connection, if `current_setting('is_superuser') = 'on'` is detected, the application blocks regular operation with a warning (*"Superuser connection detected. Please setup a Role Admin."*) and directs the user to connection settings.
+### 7. Attribute Assignment, User & Role Visibility & Superuser Safety Rules
+- **User & Role Visibility (`ADMIN OPTION` Required)**:
+  - **Users (`rolcanlogin = true`)** are **only** shown in the user list if the connected account holds `ADMIN OPTION` on them (`user.isAdmin = true`), and they are neither superusers (`!user.isSuperuser`) nor the currently connected user (`!user.isCurrent`).
+  - **Roles (`rolcanlogin = false`)** are **only** shown in the role list and category manager if the connected account holds `ADMIN OPTION` on them (`group.grantable = true`).
+- **Search Filters & General Preferences**:
+  - Search filters can be toggled directly from the `AppBar` search button (`Icons.search` / `Icons.search_off`) or via `Cmd+F` / `Ctrl+F` (`Esc` to close).
+  - **General Preferences** in App Settings provides **Show Descriptions** (to toggle user and role descriptions) and **Theme** (`System`, `Light`, `Dark`).
+- **No Superuser Connections & Role Admin Bootstrapping**: Superusers are prohibited from connecting with this application. On connection, if `current_setting('is_superuser') = 'on'` is detected, the application blocks regular operation with a warning (*"Superuser connection detected. Please setup a Role Admin."*) and offers to bootstrap a dedicated Role Admin (`CreateRoleAdminDialog`). During bootstrapping, the checkbox **"Grant ADMIN OPTION on existing users and roles"** (checked by default) delegates existing non-superuser, non-system users and roles using `GRANT <role> TO <admin> WITH ADMIN TRUE, INHERIT FALSE, SET FALSE`.
 - **Ceiling on Role Attributes**: In PostgreSQL, a non-superuser with `CREATEROLE` can **only** assign attributes (`CREATEROLE`, `CREATEDB`, `REPLICATION`, `BYPASSRLS`) to new or duplicated roles if they **themselves** possess that exact attribute. Non-superusers can **never** assign `SUPERUSER`.
 
 

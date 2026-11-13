@@ -1,8 +1,8 @@
-import 'dart:ui';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:postgres/postgres.dart';
+import '../main.dart';
 import '../models/pg_role.dart';
 import '../models/pg_user_group.dart';
 import '../services/database_service.dart';
@@ -15,17 +15,17 @@ import 'role_management_widget.dart';
 import 'connection_status_bar.dart';
 import 'edit_role_category_dialog.dart';
 
-class RoleManagerHome extends StatefulWidget {
-  final DatabaseService? dbService;
-  final CredentialStorageService? credentialStorage;
-
-  const RoleManagerHome({super.key, this.dbService, this.credentialStorage});
-
+class const RoleManagerHome({
+  super.key,
+  final DatabaseService? dbService,
+  final CredentialStorageService? credentialStorage,
+}) extends StatefulWidget {
   @override
   State<RoleManagerHome> createState() => _RoleManagerHomeState();
 }
 
 class _RoleManagerHomeState extends State<RoleManagerHome> {
+  static const String _ungroupedCategoryKey = '__ungrouped__';
   late final DatabaseService _dbService;
   late final CredentialStorageService _credentialStorage;
   final TextEditingController _userSearchController = TextEditingController();
@@ -45,33 +45,27 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     final result = <String>[];
 
     for (final t in _savedCategoryTemplates) {
-      if (t.trim().isNotEmpty) {
-        final key = t.split(':').first.trim().toLowerCase();
-        if (seen.add(key)) {
-          result.add(t.trim());
-        }
+      final key = PgUserGroup.categoryKey(t);
+      if (key != null && seen.add(key)) {
+        result.add(t.trim());
       }
     }
 
     for (final g in _groupCatalog) {
       if (!g.grantable) continue;
       final cat = g.category?.trim();
-      if (cat != null && cat.isNotEmpty) {
-        final key = cat.split(':').first.trim().toLowerCase();
-        if (seen.add(key)) {
-          result.add(cat);
-        }
+      final key = PgUserGroup.categoryKey(cat);
+      if (cat != null && key != null && seen.add(key)) {
+        result.add(cat);
       }
     }
 
     for (final g in _selectedUserGroups) {
       if (!g.grantable) continue;
       final cat = g.category?.trim();
-      if (cat != null && cat.isNotEmpty) {
-        final key = cat.split(':').first.trim().toLowerCase();
-        if (seen.add(key)) {
-          result.add(cat);
-        }
+      final key = PgUserGroup.categoryKey(cat);
+      if (cat != null && key != null && seen.add(key)) {
+        result.add(cat);
       }
     }
 
@@ -104,18 +98,13 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
   bool _isLoading = true;
   String? _error;
-  bool _showSystemRoles = false;
-  bool _showUngrantableRoles = false;
-  bool _showUsersWithoutAdminOption = false;
-  bool _showSuperusers = false;
   bool _showDescriptions = true;
   bool _showFilters = false;
-  bool _showConnectedUser = false;
+  ThemeMode _themeMode = .system;
   String _userSearchQuery = '';
   String? _clusterName;
   bool _isSslEnabled = false;
   bool _canCreateRole = false;
-  bool _canSetCategoryParameter = false;
 
   @override
   void initState() {
@@ -261,14 +250,18 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
     _dbService.sslMode = SslMode.values[prefs.getInt('db_ssl_mode') ?? SslMode.require.index];
 
+    final savedTheme = prefs.getString('themeMode');
+    final themeMode = switch (savedTheme) {
+      'light' => ThemeMode.light,
+      'dark' => ThemeMode.dark,
+      _ => ThemeMode.system,
+    };
+    appThemeModeNotifier.value = themeMode;
+
     setState(() {
-      _showSystemRoles = prefs.getBool('showSystemRoles') ?? false;
-      _showUngrantableRoles = prefs.getBool('showUngrantableRoles') ?? false;
-      _showUsersWithoutAdminOption = prefs.getBool('showUsersWithoutAdminOption') ?? prefs.getBool('showUngrantableUsers') ?? false;
-      _showSuperusers = prefs.getBool('showSuperusers') ?? false;
       _showDescriptions = prefs.getBool('showDescriptions') ?? true;
       _showFilters = prefs.getBool('showFilters') ?? false;
-      _showConnectedUser = prefs.getBool('showConnectedUser') ?? false;
+      _themeMode = themeMode;
       _savedCategoryTemplates =
           prefs.getStringList(_customCategoriesPrefKey) ??
           prefs.getStringList('savedRoleCategoryTemplates') ??
@@ -292,41 +285,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
   }
 
-  Future<void> _saveSystemRolesSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showSystemRoles', value);
-    setState(() {
-      _showSystemRoles = value;
-      _validateSelectedUser();
-    });
-  }
-
-  Future<void> _saveUngrantableRolesSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showUngrantableRoles', value);
-    setState(() {
-      _showUngrantableRoles = value;
-    });
-  }
-
-  Future<void> _saveUsersWithoutAdminOptionSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showUsersWithoutAdminOption', value);
-    setState(() {
-      _showUsersWithoutAdminOption = value;
-      _validateSelectedUser();
-    });
-  }
-
-  Future<void> _saveSuperusersSetting(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showSuperusers', value);
-    setState(() {
-      _showSuperusers = value;
-      _validateSelectedUser();
-    });
-  }
-
   Future<void> _saveDescriptionsSetting(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('showDescriptions', value);
@@ -343,12 +301,17 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     await prefs.setBool('showFilters', value);
   }
 
-  Future<void> _saveShowConnectedUserSetting(bool value) async {
+  Future<void> _saveThemeModeSetting(ThemeMode mode) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('showConnectedUser', value);
+    final modeStr = switch (mode) {
+      .light => 'light',
+      .dark => 'dark',
+      .system => 'system',
+    };
+    await prefs.setString('themeMode', modeStr);
+    appThemeModeNotifier.value = mode;
     setState(() {
-      _showConnectedUser = value;
-      _validateSelectedUser();
+      _themeMode = mode;
     });
   }
 
@@ -392,8 +355,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _dbService.fetchSslStatus(),
       ).wait;
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
-      final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter();
-      
+
       setState(() {
         _savedCategoryTemplates = savedTemplates;
         _users = allRoles.where((r) => r.canLogin).toList();
@@ -402,7 +364,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
         _canCreateRole = canCreateRole;
-        _canSetCategoryParameter = canSetCategory;
       });
     } catch (e) {
       setState(() => _error = e.toString());
@@ -566,12 +527,9 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               onToggleRole: _toggleRole,
               categoryTemplates: _allCategoryTemplates,
               roleSearchController: _roleSearchController,
-              showSystemRoles: _showSystemRoles,
-              showUngrantableRoles: _showUngrantableRoles,
               showDescriptions: _showDescriptions,
               showFilters: _showFilters,
               currentUsername: _dbService.username,
-              isDeletable: _isUserDeletable(user),
               onDeletePressed: _handleDeleteUser,
               onEditPressed: _canCreateRole ? _handleEditUser : null,
               onDuplicatePressed: _canCreateRole ? _handleDuplicateUser : null,
@@ -607,7 +565,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         refreshedGroups = await _dbService.fetchGroupsForUser(_selectedUser!.oid, forceRefresh: true);
       }
       final canCreateRole = await _dbService.canCurrentUserCreateRole();
-      final canSetCategory = await _dbService.canCurrentUserSetCategoryParameter(forceRefresh: true);
       if (!mounted) return;
 
       setState(() {
@@ -617,7 +574,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         _clusterName = clusterName;
         _isSslEnabled = isSsl;
         _canCreateRole = canCreateRole;
-        _canSetCategoryParameter = canSetCategory;
 
         if (_selectedUser != null) {
           final updatedUser = allRoles.where((r) => r.oid == _selectedUser!.oid).firstOrNull;
@@ -680,21 +636,12 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   List<PgRole> _filterRoles(List<PgRole> roles, {String? searchQuery, bool isUserList = false}) {
     Iterable<PgRole> filtered = roles;
 
-    if (isUserList && !_showConnectedUser) {
-      // Hide the currently connected user from the target list if setting is off
-      filtered = filtered.where((r) => !r.isCurrent && r.name != _dbService.username);
-    }
-
-    if (!_showSystemRoles) {
-      filtered = filtered.where((r) => !r.name.startsWith('pg_'));
-    }
-
-    if (isUserList && !_showUsersWithoutAdminOption) {
-      filtered = filtered.where((r) => r.isAdmin || r.isSuperuser || r.isCurrent || r.name == _dbService.username);
-    }
-
-    if (isUserList && !_showSuperusers) {
-      filtered = filtered.where((r) => !r.isSuperuser || (_showConnectedUser && (r.isCurrent || r.name == _dbService.username)));
+    if (isUserList) {
+      filtered = filtered.where(
+        (r) => r.isAdmin && !r.isSuperuser && !r.isCurrent && r.name != _dbService.username,
+      );
+    } else {
+      filtered = filtered.where((r) => r.isAdmin);
     }
 
     if (searchQuery != null && searchQuery.isNotEmpty) {
@@ -711,26 +658,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
 
   bool _isUserEditable(PgRole user) {
     return _canCreateRole && user.isAdmin;
-  }
-
-  bool _isUserDeletable(PgRole user) {
-    // Condition 0: PostgreSQL Entitlement (CREATEROLE + ADMIN OPTION on this role)
-    if (!user.canDrop) {
-      return false;
-    }
-
-    // Condition 1: No special attributes (Security safety)
-    if (user.isSuperuser || user.createRole || user.createDb || user.replication || user.bypassRls) {
-      return false;
-    }
-
-    // Condition 2: No memberships granted by another grantor (Revocation safety)
-    if (_selectedUser?.oid == user.oid) {
-      final hasExternalGrantors = _selectedUserGroups.any((g) => g.grantors.isNotEmpty);
-      if (hasExternalGrantors) return false;
-    }
-
-    return true;
   }
 
   Future<void> _handleDeleteUser(PgRole user) async {
@@ -800,11 +727,11 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               child: SizedBox(
                 height: sheetHeight,
                 child: DefaultTabController(
-                  length: _canSetCategoryParameter ? 2 : 1,
+                  length: 2,
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                        padding: const .fromLTRB(16, 12, 8, 4),
                         child: Row(
                           children: [
                             const Icon(Icons.settings),
@@ -819,23 +746,20 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                           ],
                         ),
                       ),
-                      if (_canSetCategoryParameter)
-                        TabBar(
-                          labelColor: theme.colorScheme.primary,
-                          tabs: const [
-                            Tab(icon: Icon(Icons.tune), text: 'General Preferences'),
-                            Tab(icon: Icon(Icons.category_outlined), text: 'Role Categories'),
+                      TabBar(
+                        labelColor: theme.colorScheme.primary,
+                        tabs: const [
+                          Tab(icon: Icon(Icons.tune), text: 'General Preferences'),
+                          Tab(icon: Icon(Icons.category_outlined), text: 'Role Categories'),
+                        ],
+                      ),
+                      Expanded(
+                        child: TabBarView(
+                          children: [
+                            _buildGeneralPreferencesTab(setModalState),
+                            _buildRoleCategoriesTab(setModalState),
                           ],
                         ),
-                      Expanded(
-                        child: _canSetCategoryParameter
-                            ? TabBarView(
-                                children: [
-                                  _buildGeneralPreferencesTab(setModalState),
-                                  _buildRoleCategoriesTab(setModalState),
-                                ],
-                              )
-                            : _buildGeneralPreferencesTab(setModalState),
                       ),
                     ],
                   ),
@@ -852,10 +776,11 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
   }
 
   Widget _buildGeneralPreferencesTab(void Function(void Function()) setModalState) {
+    final theme = Theme.of(context);
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
+      padding: const .all(16.0),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: .min,
         children: [
           SwitchListTile(
             title: const Text('Show Descriptions'),
@@ -866,59 +791,50 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               setModalState(() {});
             },
           ),
-          SwitchListTile(
-            title: const Text('Show Filters'),
-            subtitle: const Text('Show user and role search filters'),
-            value: _showFilters,
-            onChanged: (value) {
-              _saveFiltersSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show Users Without Admin'),
-            subtitle: const Text('Include users for which we do not have ADMIN OPTION'),
-            value: _showUsersWithoutAdminOption,
-            onChanged: (value) {
-              _saveUsersWithoutAdminOptionSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show Ungrantable Roles'),
-            subtitle: const Text('Include roles that cannot be granted due to missing permissions'),
-            value: _showUngrantableRoles,
-            onChanged: (value) {
-              _saveUngrantableRolesSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show Superusers'),
-            subtitle: const Text('Include users with superuser privileges'),
-            value: _showSuperusers,
-            onChanged: (value) {
-              _saveSuperusersSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show Connected User'),
-            subtitle: const Text('Show the active connection account in the user list'),
-            value: _showConnectedUser,
-            onChanged: (value) {
-              _saveShowConnectedUserSetting(value);
-              setModalState(() {});
-            },
-          ),
-          SwitchListTile(
-            title: const Text('Show System Roles'),
-            subtitle: const Text('Include roles starting with "pg_"'),
-            value: _showSystemRoles,
-            onChanged: (value) {
-              _saveSystemRolesSetting(value);
-              setModalState(() {});
-            },
+          const Divider(),
+          Padding(
+            padding: const .symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Column(
+              crossAxisAlignment: .start,
+              children: [
+                Text('Theme', style: theme.textTheme.bodyLarge),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose light, dark, or system appearance',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: SegmentedButton<ThemeMode>(
+                    segments: const [
+                      ButtonSegment(
+                        value: .system,
+                        label: Text('System'),
+                        icon: Icon(Icons.brightness_auto_outlined),
+                      ),
+                      ButtonSegment(
+                        value: .light,
+                        label: Text('Light'),
+                        icon: Icon(Icons.light_mode_outlined),
+                      ),
+                      ButtonSegment(
+                        value: .dark,
+                        label: Text('Dark'),
+                        icon: Icon(Icons.dark_mode_outlined),
+                      ),
+                    ],
+                    selected: {_themeMode},
+                    onSelectionChanged: (selected) {
+                      _saveThemeModeSetting(selected.first);
+                      setModalState(() {});
+                    },
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 16),
         ],
@@ -938,8 +854,11 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         .toList();
 
     for (final g in managedGroups) {
-      final raw = g.category?.trim();
-      if (raw != null && raw.isNotEmpty) {
+      if (g.isDefaultUngrouped) {
+        categoryMembers.putIfAbsent(_ungroupedCategoryKey, () => []).add(g);
+        categorySamples.putIfAbsent(_ungroupedCategoryKey, () => g);
+      } else {
+        final raw = g.category!.trim();
         final catName = g.categoryName ?? raw;
         categoryMembers.putIfAbsent(catName, () => []).add(g);
         categorySamples.putIfAbsent(catName, () => g);
@@ -947,8 +866,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     }
 
     for (final template in _savedCategoryTemplates) {
-      final parts = template.split(':');
-      final tName = parts.isNotEmpty ? parts[0].trim() : template;
+      final tName = PgUserGroup.parseCategory(template).name ?? template;
       if (!categoryMembers.containsKey(tName)) {
         categoryMembers[tName] = [];
         categorySamples[tName] = PgUserGroup(
@@ -962,12 +880,15 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       }
     }
 
+    final customCategoryCount =
+        categoryMembers.keys.where((k) => k != _ungroupedCategoryKey).length;
+
     final sortedCategoryNames = categoryMembers.keys.toList()
       ..sort((a, b) {
         final sampleA = categorySamples[a]!;
         final sampleB = categorySamples[b]!;
-        final orderA = sampleA.categoryOrder;
-        final orderB = sampleB.categoryOrder;
+        final orderA = sampleA.effectiveCategoryOrder;
+        final orderB = sampleB.effectiveCategoryOrder;
         if (orderA != null && orderB != null && orderA != orderB) {
           return orderA.compareTo(orderB);
         } else if (orderA != null && orderB == null) {
@@ -975,27 +896,32 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         } else if (orderA == null && orderB != null) {
           return 1;
         }
-        return a.toLowerCase().compareTo(b.toLowerCase());
+        if (sampleA.isDefaultUngrouped != sampleB.isDefaultUngrouped) {
+          return sampleA.isDefaultUngrouped ? 1 : -1;
+        }
+        return sampleA.effectiveCategoryName
+            .toLowerCase()
+            .compareTo(sampleB.effectiveCategoryName.toLowerCase());
       });
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: .start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16.0, 12.0, 16.0, 8.0),
+          padding: const .fromLTRB(16.0, 12.0, 16.0, 8.0),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: .start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisAlignment: .spaceBetween,
                 children: [
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment: .start,
                       children: [
                         Text(
                           'Manage Categories',
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: .bold),
                         ),
                         const SizedBox(height: 2),
                         Text(
@@ -1011,7 +937,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     label: const Text('New Category'),
                     onPressed: () => _addNewCategoryInSettings(
                       setModalState,
-                      nextOrder: sortedCategoryNames.length + 1,
+                      nextOrder: customCategoryCount + 1,
                     ),
                   ),
                 ],
@@ -1023,9 +949,9 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
           child: sortedCategoryNames.isEmpty
               ? Center(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 16.0),
+                    padding: const .symmetric(vertical: 24.0, horizontal: 16.0),
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisSize: .min,
                       children: [
                         Icon(Icons.category_outlined, size: 48, color: theme.disabledColor),
                         const SizedBox(height: 12),
@@ -1034,7 +960,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                         Text(
                           'Tap "New Category" to organize your roles into groups.',
                           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-                          textAlign: TextAlign.center,
+                          textAlign: .center,
                         ),
                       ],
                     ),
@@ -1042,7 +968,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                 )
               : ReorderableListView.builder(
                   buildDefaultDragHandles: false,
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                  padding: const .symmetric(horizontal: 16.0, vertical: 8.0),
                   itemCount: sortedCategoryNames.length,
                   // ignore: deprecated_member_use
                   onReorder: (oldIndex, newIndex) async {
@@ -1059,17 +985,21 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                       final sample = categorySamples[cat]!;
                       final members = categoryMembers[cat]!;
                       final formatted = PgUserGroup.formatCategory(
-                        name: sample.categoryName ?? cat,
+                        name: sample.effectiveCategoryName,
                         order: newOrder,
-                        colorHex: sample.categoryColorHex,
+                        colorHex: sample.effectiveCategoryColorHex,
                       );
-                      for (final member in members) {
-                        batchUpdates[member.name] = formatted;
+                      if (cat == _ungroupedCategoryKey) {
+                        await _dbService.saveUngroupedCategoryTemplate(formatted);
+                      } else {
+                        for (final member in members) {
+                          batchUpdates[member.name] = formatted;
+                        }
+                        _savedCategoryTemplates.removeWhere(
+                          (t) => PgUserGroup.categoryKey(t) == cat.toLowerCase(),
+                        );
+                        _savedCategoryTemplates.add(formatted);
                       }
-                      _savedCategoryTemplates.removeWhere(
-                        (t) => t.split(':').first.trim().toLowerCase() == cat.toLowerCase(),
-                      );
-                      _savedCategoryTemplates.add(formatted);
                     }
                     if (batchUpdates.isNotEmpty) {
                       await _dbService.updateCategoriesBatch(batchUpdates);
@@ -1079,45 +1009,54 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                     setModalState(() {});
                   },
                   itemBuilder: (context, index) {
-                    final catName = sortedCategoryNames[index];
-                    final sample = categorySamples[catName]!;
-                    final members = categoryMembers[catName]!;
-                    final color = sample.categoryColor;
+                    final catKey = sortedCategoryNames[index];
+                    final isDefaultUngrouped = catKey == _ungroupedCategoryKey;
+                    final sample = categorySamples[catKey]!;
+                    final displayName = sample.effectiveCategoryName;
+                    final members = categoryMembers[catKey]!;
+                    final color = sample.effectiveCategoryColor;
 
                     return Card(
-                      key: ValueKey(catName),
-                      margin: const EdgeInsets.only(bottom: 8.0),
+                      key: ValueKey(catKey),
+                      margin: const .only(bottom: 8.0),
                       elevation: 0,
                       shape: RoundedRectangleBorder(
                         side: BorderSide(
                           color: color?.withValues(alpha: 0.5) ?? theme.dividerColor,
                           width: color != null ? 1.5 : 1.0,
                         ),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: .circular(10),
                       ),
                       child: ListTile(
                         title: Text(
-                          catName,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
+                          displayName,
+                          style: const TextStyle(fontWeight: .bold),
+                          overflow: .ellipsis,
                         ),
                         trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                          mainAxisSize: .min,
                           children: [
                             IconButton(
                               icon: const Icon(Icons.edit_outlined, size: 20),
                               tooltip: 'Edit Category',
-                              onPressed: () => _editCategoryInSettings(catName, sample, members, setModalState),
+                              onPressed: () => _editCategoryInSettings(
+                                displayName,
+                                sample,
+                                members,
+                                setModalState,
+                                isDefaultUngrouped: isDefaultUngrouped,
+                              ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                              tooltip: 'Delete Category',
-                              onPressed: () => _deleteCategoryInSettings(catName, members, setModalState),
-                            ),
+                            if (!isDefaultUngrouped)
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                                tooltip: 'Delete Category',
+                                onPressed: () => _deleteCategoryInSettings(displayName, members, setModalState),
+                              ),
                             ReorderableDragStartListener(
                               index: index,
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                                padding: const .symmetric(horizontal: 4.0),
                                 child: Icon(
                                   Icons.drag_handle,
                                   color: theme.colorScheme.onSurfaceVariant,
@@ -1139,17 +1078,19 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     String catName,
     PgUserGroup sample,
     List<PgUserGroup> members,
-    void Function(void Function()) setModalState,
-  ) async {
+    void Function(void Function()) setModalState, {
+    bool isDefaultUngrouped = false,
+  }) async {
     final result = await showDialog<EditRoleCategoryResult>(
       context: context,
       builder: (context) => EditRoleCategoryDialog(
         title: 'Edit Category "$catName"',
         subtitle: 'Configure category details and assign member roles.',
-        currentCategory: sample.category,
-        defaultOrder: sample.categoryOrder,
+        currentCategory: isDefaultUngrouped ? sample.ungroupedTemplate : sample.category,
+        defaultOrder: sample.effectiveCategoryOrder,
         availableRoles: _allAvailableGroupsWithCategories,
         initialSelectedRoleNames: members.map((r) => r.name).toList(),
+        isDefaultUngrouped: isDefaultUngrouped,
       ),
     );
 
@@ -1159,31 +1100,44 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
     final newSelectedSet = result.assignedRoleNames.toSet();
     final previousMemberNames = members.map((r) => r.name).toSet();
 
-    final removedRoleNames = previousMemberNames.difference(newSelectedSet).toList();
-    final assignedRoleNames = newSelectedSet.toList();
-
     try {
-      final batchUpdates = <String, String?>{
-        for (final name in removedRoleNames) name: null,
-        if (normalized != null)
-          for (final name in assignedRoleNames) name: normalized,
-      };
-      if (batchUpdates.isNotEmpty) {
-        await _dbService.updateCategoriesBatch(batchUpdates);
+      if (isDefaultUngrouped) {
+        final newlyUngroupedNames =
+            newSelectedSet.difference(previousMemberNames).toList();
+        if (newlyUngroupedNames.isNotEmpty) {
+          await _dbService.updateCategoriesBatch({
+            for (final name in newlyUngroupedNames) name: null,
+          });
+        }
+        await _dbService.saveUngroupedCategoryTemplate(
+          normalized ?? PgUserGroup.defaultUngroupedTemplate,
+        );
+      } else {
+        final removedRoleNames =
+            previousMemberNames.difference(newSelectedSet).toList();
+        final assignedRoleNames = newSelectedSet.toList();
+        final batchUpdates = <String, String?>{
+          for (final name in removedRoleNames) name: null,
+          if (normalized != null)
+            for (final name in assignedRoleNames) name: normalized,
+        };
+        if (batchUpdates.isNotEmpty) {
+          await _dbService.updateCategoriesBatch(batchUpdates);
+        }
+        _savedCategoryTemplates.removeWhere(
+          (t) => PgUserGroup.categoryKey(t) == catName.toLowerCase(),
+        );
+        if (normalized != null) {
+          _savedCategoryTemplates.add(normalized);
+        }
+        await _saveCustomCategoryTemplates();
       }
-      _savedCategoryTemplates.removeWhere(
-        (t) => t.split(':').first.trim().toLowerCase() == catName.toLowerCase(),
-      );
-      if (normalized != null) {
-        _savedCategoryTemplates.add(normalized);
-      }
-      await _saveCustomCategoryTemplates();
 
       await _refreshRolesData();
       if (mounted) {
         setModalState(() {});
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Category "$catName" updated across ${assignedRoleNames.length} role(s).')),
+          SnackBar(content: Text('Category "$catName" updated across ${newSelectedSet.length} role(s).')),
         );
       }
     } catch (e) {
@@ -1229,7 +1183,7 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
         await _dbService.updateCategoryForRoles(members.map((r) => r.name), null);
       }
       _savedCategoryTemplates.removeWhere(
-        (t) => t.split(':').first.trim().toLowerCase() == catName.toLowerCase(),
+        (t) => PgUserGroup.categoryKey(t) == catName.toLowerCase(),
       );
       await _saveCustomCategoryTemplates();
 
@@ -1333,12 +1287,23 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
               tooltip: 'Duplicate User',
               onPressed: () => _handleDuplicateUser(_selectedUser!),
             ),
-          if (_selectedUser != null && _isUserDeletable(_selectedUser!) && !isNarrow)
+          if (_selectedUser != null && _selectedUser!.canDrop && !isNarrow)
             IconButton(
               icon: const Icon(Icons.delete_outline),
               tooltip: 'Delete User',
               onPressed: () => _handleDeleteUser(_selectedUser!),
             ),
+          IconButton(
+            icon: Icon(_showFilters ? Icons.search_off : Icons.search),
+            tooltip: _showFilters ? 'Hide Filters' : 'Search',
+            onPressed: () {
+              if (_showFilters) {
+                _handleEscape();
+              } else {
+                _activateSearchFilters();
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.link),
             tooltip: 'Connection Settings',
@@ -1360,10 +1325,10 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
       body: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(
           dragDevices: {
-            PointerDeviceKind.touch,
-            PointerDeviceKind.mouse,
-            PointerDeviceKind.trackpad,
-            PointerDeviceKind.stylus,
+            .touch,
+            .mouse,
+            .trackpad,
+            .stylus,
           },
         ),
         child: _isLoading && _users.isEmpty
@@ -1371,9 +1336,9 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
             : _error != null && _users.isEmpty
                 ? Center(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: .center,
                       children: [
-                        Text('Error: $_error', style: const TextStyle(color: Colors.red), textAlign: TextAlign.center),
+                        Text('Error: $_error', style: const TextStyle(color: Colors.red), textAlign: .center),
                         const SizedBox(height: 16),
                         ElevatedButton(onPressed: _loadInitialData, child: const Text('Retry')),
                       ],
@@ -1404,8 +1369,6 @@ class _RoleManagerHomeState extends State<RoleManagerHome> {
                                     isLoading: _isLoading,
                                     roleSearchController: _roleSearchController,
                                     roleSearchFocusNode: _roleSearchFocusNode,
-                                    showSystemRoles: _showSystemRoles,
-                                    showUngrantableRoles: _showUngrantableRoles,
                                     showDescriptions: _showDescriptions,
                                     showFilters: _showFilters,
                                     currentUsername: _dbService.username,

@@ -1,11 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../services/database_service.dart';
 
-class CreateRoleAdminDialog extends StatefulWidget {
-  final DatabaseService dbService;
-
-  const CreateRoleAdminDialog({super.key, required this.dbService});
-
+class const CreateRoleAdminDialog({
+  super.key,
+  required final DatabaseService dbService,
+}) extends StatefulWidget {
   @override
   State<CreateRoleAdminDialog> createState() => _CreateRoleAdminDialogState();
 }
@@ -14,6 +13,7 @@ class _CreateRoleAdminDialogState extends State<CreateRoleAdminDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController(text: 'dbroles');
   final _passController = TextEditingController();
+  bool _grantAdminOption = true;
   bool _isSaving = false;
 
   @override
@@ -41,7 +41,11 @@ class _CreateRoleAdminDialogState extends State<CreateRoleAdminDialog> {
         return;
       }
 
-      await widget.dbService.setupRoleAdmin(roleName, _passController.text);
+      await widget.dbService.setupRoleAdmin(
+        roleName,
+        _passController.text,
+        grantAdminOption: _grantAdminOption,
+      );
       
       if (mounted) {
         Navigator.of(context).pop({'user': roleName, 'pass': _passController.text});
@@ -64,12 +68,12 @@ class _CreateRoleAdminDialogState extends State<CreateRoleAdminDialog> {
         child: Form(
           key: _formKey,
           child: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: .min,
             children: [
               const Text(
                 'Running as superuser is not allowed for security reasons. '
                 'We will set up a dedicated "Role Admin" account with the minimal '
-                'permissions needed to manage non-login roles.',
+                'permissions needed to manage users and roles.',
               ),
               const SizedBox(height: 20),
               TextFormField(
@@ -83,6 +87,20 @@ class _CreateRoleAdminDialogState extends State<CreateRoleAdminDialog> {
                 decoration: const InputDecoration(labelText: 'Admin Password', border: OutlineInputBorder()),
                 obscureText: true,
                 validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+              ),
+              const SizedBox(height: 12),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Grant ADMIN OPTION on existing users and roles'),
+                value: _grantAdminOption,
+                onChanged: _isSaving
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() => _grantAdminOption = value);
+                        }
+                      },
               ),
             ],
           ),
